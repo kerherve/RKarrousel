@@ -1,92 +1,98 @@
-from PIL import Image
-import sys
-import os
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
 
-def split_photo_2_3_to_3_4(input_path, output_dir=None):
-    """
-    Découpe une photo au format 2/3 (ex: 4000x6000) en deux photos 3/4 portrait (ex: 3000x4000)
-    
-    Args:
-        input_path: Chemin vers la photo source
-        output_dir: Dossier de sortie (optionnel, par défaut même dossier que l'input)
-    """
-    # Ouvrir l'image
-    img = Image.open(input_path)
-    width, height = img.size
-    
-    print(f"Image source: {width}x{height}")
-    
-    # Vérifier le ratio (tolérance de 1%)
-    ratio = width / height
-    expected_ratio = 2 / 3
-    if abs(ratio - expected_ratio) > 0.01:
-        print(f"⚠️  Attention: le ratio de l'image ({ratio:.3f}) ne correspond pas exactement à 2/3 ({expected_ratio:.3f})")
-        response = input("Continuer quand même ? (o/n): ")
-        if response.lower() != 'o':
-            return
-    
-    # Calculer les dimensions pour du 3/4 portrait
-    # On veut garder la largeur et calculer la hauteur correspondante
-    target_width = width
-    target_height = int(width * 4 / 3)
-    
-    print(f"Dimensions cibles pour chaque photo: {target_width}x{target_height}")
-    
-    # Vérifier qu'on peut faire deux découpes
-    if target_height * 2 > height:
-        print(f"❌ Erreur: la hauteur de l'image ({height}) est trop petite pour découper deux photos {target_width}x{target_height}")
-        print(f"   Il faudrait au minimum {target_height * 2} pixels de hauteur")
-        return
-    
-    # Calculer les positions de découpe
-    # On centre les deux découpes dans l'image source
-    total_crop_height = target_height * 2
-    vertical_margin = (height - total_crop_height) // 2
-    
-    # Première photo (haut)
-    crop1_top = vertical_margin
-    crop1_bottom = crop1_top + target_height
-    
-    # Deuxième photo (bas)
-    crop2_top = crop1_bottom
-    crop2_bottom = crop2_top + target_height
-    
-    # Découper les deux photos
-    photo1 = img.crop((0, crop1_top, width, crop1_bottom))
-    photo2 = img.crop((0, crop2_top, width, crop2_bottom))
-    
-    # Préparer les noms de fichiers de sortie
-    base_name = os.path.splitext(os.path.basename(input_path))[0]
-    ext = os.path.splitext(input_path)[1]
-    
-    if output_dir is None:
-        output_dir = os.path.dirname(input_path)
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    output1 = os.path.join(output_dir, f"{base_name}_part1{ext}")
-    output2 = os.path.join(output_dir, f"{base_name}_part2{ext}")
-    
-    # Sauvegarder
-    photo1.save(output1, quality=95)
-    photo2.save(output2, quality=95)
-    
-    print(f"✅ Photos créées:")
-    print(f"   - {output1}")
-    print(f"   - {output2}")
+from utils import (
+    CONFIG_PATH,
+    DEFAULT_FRAME_RATIO,
+    gather_input_files,
+    load_config,
+    process_image,
+    save_config,
+)
+
+
+def main() -> int:
+    config_path = CONFIG_PATH
+    config = load_config(config_path)
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Traitement de photos LR pour Instagram : encadrement portrait 3/4 "
+            "et découpe paysage 2/3 → 2x portrait 3/4"
+        )
+    )
+    parser.add_argument("paths", nargs="*", help="Fichiers ou dossiers source à traiter")
+    parser.add_argument("-d", "--dest", help="Dossier de destination")
+    parser.add_argument(
+        "--frame-ratio",
+        type=float,
+        help="Épaisseur du cadre en fraction de la plus petite dimension (par défaut 0.04)",
+    )
+    parser.add_argument(
+        "--config-file",
+        default=str(CONFIG_PATH),
+        help="Chemin du fichier de configuration (par défaut ~/.image_splitter_config.json)",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Utiliser automatiquement les dernières préférences enregistrées si aucun chemin n'est fourni",
+    )
+    parser.add_argument(
+        "--save-preferences",
+        action="store_true",
+        help="Enregistrer les chemins source/destination et le ratio de cadre dans la configuration",
+    )
+
+    args = parser.parse_args()
+    config_path = Path(args.config_file).expanduser()
+    if config_path != CONFIG_PATH:
+        config = load_config(config_path)
+
+    inputs = args.paths or []
+    if not inputs and config.get("last_source_dir"):
+        if args.yes:
+            inputs = [config["last_source_dir"]]
+        else:
+            print(f"Utilisation du dernier dossier source : {config['last_source_dir']}")
+            inputs = [config["last_source_dir"]]
+
+    if not inputs:
+        parser.print_help()
+        return 1
+
+    output_dir = Path(args.dest or config.get("last_dest_dir", "output")).expanduser()
+    frame_ratio = args.frame_ratio if args.frame_ratio is not None else config.get("frame_ratio", DEFAULT_FRAME_RATIO)
+
+    config["frame_ratio"] = frame_ratio
+    if args.save_preferences:
+        config["last_source_dir"] = str(Path(inputs[0]).expanduser())
+        config["last_dest_dir"] = str(output_dir)
+        save_config(config_path, config)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    files = gather_input_files(inputs)
+    if not files:
+        print("Aucun fichier image trouvé à traiter.")
+        return 1
+
+    print(f"{len(files)} fichier(s) trouvé(s). Destination : {output_dir}")
+    successful = 0
+    for path in files:
+        try:
+            output_files = process_image(path, output_dir, config)
+            if output_files:
+                successful += 1
+                for out in output_files:
+                    print(f"   ✅ {out}")
+        except Exception as exc:
+            print(f"❌ Erreur pour {path.name} : {exc}")
+
+    print(f"Terminé : {successful}/{len(files)} fichier(s) traités")
+    return 0
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python split_photo.py <chemin_photo> [dossier_sortie]")
-        print("Exemple: python split_photo.py photo.jpg")
-        print("Exemple: python split_photo.py photo.jpg ./output")
-        sys.exit(1)
-    
-    input_path = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else None
-    
-    if not os.path.exists(input_path):
-        print(f"❌ Erreur: le fichier {input_path} n'existe pas")
-        sys.exit(1)
-    
-    split_photo_2_3_to_3_4(input_path, output_dir)
+    raise SystemExit(main())

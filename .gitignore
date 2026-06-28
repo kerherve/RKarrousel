@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.image_splitter_config.json
+.image_splitter_config.json.bak.*
+output/
+tmp_out/
