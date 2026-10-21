@@ -10,6 +10,7 @@ from PIL import Image, ImageOps, ImageTk
 from utils import (
     CONFIG_PATH,
     DEFAULT_FRAME_RATIO,
+    DEFAULT_LANDSCAPE_FILL_MODE,
     gather_input_files,
     load_config,
     process_image,
@@ -31,6 +32,7 @@ class PhotoSplitterGUI:
         self.source_dir = tk.StringVar(value=self.config.get("last_source_dir", ""))
         self.dest_dir = tk.StringVar(value=self.config.get("last_dest_dir", "output"))
         self.frame_ratio = tk.DoubleVar(value=self.config.get("frame_ratio", DEFAULT_FRAME_RATIO))
+        self.landscape_fill_mode = tk.StringVar(value=self.config.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE))
         self.signature_path = tk.StringVar(value=self.config.get("signature_path", ""))
         self.status_text = tk.StringVar(value="Prêt à traiter.")
         self.selected_file_info = tk.StringVar(value="Sélectionnez une image pour l'aperçu.")
@@ -88,17 +90,35 @@ class PhotoSplitterGUI:
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(ratio_frame, text="(0.04 = 4 % de la plus petite dimension)").pack(side=tk.LEFT)
 
-        ttk.Label(frame_options, text="Signature (optionnel):").grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=(12, 4))
-        
+        ttk.Label(frame_options, text="Fond du portrait 3/4 (paysages et portraits 2/3):").grid(
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=(12, 4)
+        )
+        fill_mode_frame = ttk.Frame(frame_options)
+        fill_mode_frame.grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Radiobutton(
+            fill_mode_frame,
+            text="Fond noir",
+            value="black",
+            variable=self.landscape_fill_mode,
+        ).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Radiobutton(
+            fill_mode_frame,
+            text="Fond flouté (image étendue)",
+            value="blur",
+            variable=self.landscape_fill_mode,
+        ).pack(side=tk.LEFT)
+
+        ttk.Label(frame_options, text="Signature (optionnel):").grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(12, 4))
+
         sig_frame = ttk.Frame(frame_options)
-        sig_frame.grid(row=5, column=0, columnspan=3, sticky=tk.EW)
+        sig_frame.grid(row=7, column=0, columnspan=3, sticky=tk.EW)
         sig_entry = ttk.Entry(sig_frame, textvariable=self.signature_path, width=60, state="readonly")
         sig_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         ttk.Button(sig_frame, text="Choisir signature", command=self.choose_signature).pack(side=tk.LEFT, padx=(0, 4))
         ttk.Button(sig_frame, text="Effacer", command=self.clear_signature).pack(side=tk.LEFT)
 
         ttk.Button(frame_options, text="Enregistrer les préférences", command=self.save_preferences).grid(
-            row=6, column=0, columnspan=3, pady=(14, 0), sticky=tk.W
+            row=8, column=0, columnspan=3, pady=(14, 0), sticky=tk.W
         )
 
         frame_options.columnconfigure(0, weight=1)
@@ -225,6 +245,7 @@ class PhotoSplitterGUI:
         self.config["last_source_dir"] = self.source_dir.get()
         self.config["last_dest_dir"] = self.dest_dir.get()
         self.config["frame_ratio"] = self.frame_ratio.get()
+        self.config["landscape_fill_mode"] = self.landscape_fill_mode.get()
         self.config["signature_path"] = self.signature_path.get()
         save_config(CONFIG_PATH, self.config)
         self.status_text.set("Préférences sauvegardées.")
@@ -240,6 +261,7 @@ class PhotoSplitterGUI:
         self.config["last_source_dir"] = self.source_dir.get()
         self.config["last_dest_dir"] = self.dest_dir.get()
         self.config["frame_ratio"] = self.frame_ratio.get()
+        self.config["landscape_fill_mode"] = self.landscape_fill_mode.get()
         self.config["signature_path"] = self.signature_path.get()
         save_config(CONFIG_PATH, self.config)
 
