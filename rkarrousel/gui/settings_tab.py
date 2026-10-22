@@ -40,4 +40,4 @@ class SettingsTab(ttk.Frame):
         self.updates = UpdateGroup(inner, ctx, on_check_updates)
         groups = (self.appearance, self.frame, self.fill, self.signature, self.output, self.kinds, self.drive, self.updates)
         for row, group in enumerate(groups):
-            group.grid(row=row, column=0, sticky=tk.EW, pady=(0, 8))
+            group.grid(row=row, column=0, sticky=tk.EW, pady=(0, 0 if row == len(groups) - 1 else 8))
