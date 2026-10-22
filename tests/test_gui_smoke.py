@@ -42,6 +42,24 @@ class GuiBuildTests(unittest.TestCase):
         self.assertNotIn("github_token", config)  # l'ancien jeton n'est plus conservé
         self.assertIn("output_format", config)
 
+    def test_startup_check_runs_every_launch_even_right_after_a_check(self):
+        import os
+        from unittest import mock
+
+        calls = []
+        self.app.check_updates = lambda manual=False: calls.append(manual)
+        self.app.update_check.set(True)
+        self.app.config["last_update_check"] = 9999999999  # une vérification « toute récente » ne doit rien bloquer
+        with mock.patch.dict(os.environ, {"RKARROUSEL_UPDATE_API": "http://127.0.0.1:1"}):
+            self.app.auto_check_updates()
+            self.app.auto_check_updates()
+        self.assertEqual(calls, [False, False])
+        self.app.update_check.set(False)  # sauf si l'utilisateur a désactivé la vérification
+        with mock.patch.dict(os.environ, {"RKARROUSEL_UPDATE_API": "http://127.0.0.1:1"}):
+            self.app.auto_check_updates()
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("last_update_check", self.app.collect_config())
+
     def test_language_and_theme_changes_rebuild_the_ui(self):
         self.app.change_language(1)
         self.app.change_theme(2)

@@ -76,11 +76,6 @@ class VersionTests(unittest.TestCase):
         self.assertFalse(updater.is_newer("0.6.9", "0.7.0"))
         self.assertFalse(updater.is_newer("garbage", "0.7.0"))
 
-    def test_check_due(self):
-        self.assertTrue(updater.check_due(0, now=100000))
-        self.assertFalse(updater.check_due(100000, now=100100))
-        self.assertTrue(updater.check_due(100000, now=100000 + updater.CHECK_INTERVAL + 1))
-
 
 class GitHubTests(unittest.TestCase):
     def tearDown(self):

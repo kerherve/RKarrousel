@@ -50,7 +50,7 @@ La configuration `.image_splitter_config.json` est stockée à côté de l'exéc
 
 ## Mises à jour automatiques
 
-Au démarrage (au plus toutes les 6 h, désactivable dans **Réglages → Mises à jour**), l'exécutable interroge les
+À chaque démarrage (désactivable dans **Réglages → Mises à jour**), l'exécutable interroge les
 releases GitHub. S'il trouve une version plus récente, il affiche les nouveautés et propose **Mettre à jour
 maintenant**, **Plus tard** ou **Ignorer cette version**. Il télécharge alors `RKarrousel-vX.Y.Z.exe`, vérifie sa
 taille et son empreinte SHA-256, **vérifie que la nouvelle version démarre**, puis la met à la place de l'ancienne

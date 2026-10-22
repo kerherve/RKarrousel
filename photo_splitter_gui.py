@@ -545,8 +545,7 @@ class PhotoSplitterGUI:
     def auto_check_updates(self):
         if not self.update_check.get() or not (FROZEN or os.environ.get("RKARROUSEL_UPDATE_API")):
             return
-        if updater.check_due(self.config.get("last_update_check", 0)):
-            self.check_updates(manual=False)
+        self.check_updates(manual=False)  # à chaque démarrage : une seule requête légère vers GitHub
 
     def check_updates(self, manual: bool = False):
         if manual:
@@ -565,8 +564,6 @@ class PhotoSplitterGUI:
         threading.Thread(target=work, daemon=True).start()
 
     def on_update_check(self, info, error, manual: bool):
-        self.config["last_update_check"] = time.time()
-        save_config(CONFIG_PATH, self.config)
         if error is not None:
             logger.info("Recherche de mise à jour : %s", error)
             if manual:
@@ -972,6 +969,7 @@ class PhotoSplitterGUI:
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
         cfg["update_check"] = bool(self.update_check.get())
+        cfg.pop("last_update_check", None)  # ancien réglage : la vérification a lieu à chaque démarrage
         cfg.pop("github_token", None)  # ancien réglage supprimé : on n'en garde aucune trace dans la config
         cfg["gdrive_enabled"] = bool(self.gdrive_enabled.get())
         cfg["gdrive_folder"] = self.gdrive_folder.get().strip() or "RKarrousel"

@@ -26,7 +26,6 @@ REPO = "kerherve/RKarrousel"
 API_URL = "https://api.github.com"
 ASSET_RE = re.compile(r"^RKarrousel-v(\d+\.\d+\.\d+)\.exe$")  # l'exécutable portable (pas l'installateur)
 USER_AGENT = "RKarrousel-updater"
-CHECK_INTERVAL = 6 * 3600  # secondes entre deux vérifications automatiques
 CHUNK = 256 * 1024
 
 logger = logging.getLogger("imagesplitter")
@@ -49,10 +48,6 @@ def parse_version(text: str) -> Tuple[int, ...]:
 def is_newer(candidate: str, current: str) -> bool:
     new, old = parse_version(candidate), parse_version(current)
     return bool(new) and new > old
-
-
-def check_due(last_check: float, now: Optional[float] = None, interval: float = CHECK_INTERVAL) -> bool:
-    return (time.time() if now is None else now) - float(last_check or 0) >= interval
 
 
 @dataclass
