@@ -11,6 +11,8 @@ STRINGS = {
     "fr": {
         "app_title": "Photo Splitter LR → Instagram",
         "app_heading": "Photo Splitter LR → Insta",
+        "app_subtitle": "Cadre, découpe et ordre de vos photos pour Instagram",
+        "preview_empty": "Sélectionnez une photo\npour la voir ici",
         "about": "À propos",
         "about_text": "Photo Splitter LR → Instagram\nVersion {version}\n\nhttps://github.com/kerherve/imageSplitter\n\nJournal : {log}",
         "language": "Langue :",
@@ -103,6 +105,8 @@ STRINGS = {
     "en": {
         "app_title": "Photo Splitter LR → Instagram",
         "app_heading": "Photo Splitter LR → Insta",
+        "app_subtitle": "Frame, split and order your photos for Instagram",
+        "preview_empty": "Select a photo\nto preview it here",
         "about": "About",
         "about_text": "Photo Splitter LR → Instagram\nVersion {version}\n\nhttps://github.com/kerherve/imageSplitter\n\nLog: {log}",
         "language": "Language:",

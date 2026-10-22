@@ -43,6 +43,12 @@ except Exception:  # pragma: no cover - dépend de l'installation
     DND_FILES = None
     TkinterDnD = None
 
+# Thème moderne (Sun Valley) optionnel : sans `sv_ttk`, l'appli garde le thème Tk de base.
+try:
+    import sv_ttk
+except Exception:  # pragma: no cover - dépend de l'installation
+    sv_ttk = None
+
 logger = logging.getLogger("imagesplitter")
 WORKERS = max(1, min(3, os.cpu_count() or 1))
 MAX_ERRORS_SHOWN = 10
@@ -61,6 +67,36 @@ def setup_logging() -> None:
         pass
 
 
+def system_prefers_dark() -> bool:
+    """Vrai si Windows est réglé sur le mode d'application sombre."""
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        ) as key:
+            return winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
+    except OSError:
+        return False
+
+
+def enable_dpi_awareness() -> None:
+    """Évite le texte flou sur les écrans mis à l'échelle (125 %, 150 %…) sous Windows."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 def _var_value(var: tk.Variable, default):
     """Lit une variable Tk saisie à la main (Spinbox) sans planter si le champ est vide ou invalide."""
     try:
@@ -74,8 +110,9 @@ class PhotoSplitterGUI:
         self.root = root
         self.config = load_config(CONFIG_PATH)
         i18n.set_language(self.config.get("language"))
-        self.root.geometry("1100x720")
-        self.root.minsize(1000, 640)
+        self.dark = self.apply_theme()
+        self.scale = max(1.0, self.root.winfo_fpixels("1i") / 96)
+        self.setup_geometry()
 
         self.selected_paths: List[str] = []
         self.preview_image = None
@@ -109,6 +146,36 @@ class PhotoSplitterGUI:
         self.set_status(t("status_ready"))
         self.root.after(100, self.poll_events)
 
+    # ------------------------------------------------------------------ apparence
+    def apply_theme(self) -> bool:
+        """Applique le thème (clair/sombre selon Windows, ou `theme` de la config). Renvoie True si sombre."""
+        choice = self.config.get("theme", "auto")
+        dark = system_prefers_dark() if choice == "auto" else choice == "dark"
+        if sv_ttk is not None:
+            try:
+                sv_ttk.set_theme("dark" if dark else "light")
+            except Exception:
+                logger.exception("Thème indisponible")
+        style = ttk.Style()
+        style.configure("Title.TLabel", font=("Segoe UI", 20, "bold"))
+        style.configure("Subtitle.TLabel", font=("Segoe UI", 10), foreground="#8a8a8a")
+        style.configure("Hint.TLabel", font=("Segoe UI", 9), foreground="#8a8a8a")
+        self.accent_style = "Accent.TButton" if sv_ttk is not None else "TButton"
+        return dark
+
+    def setup_geometry(self):
+        """Taille adaptée à l'écran (échelle Windows comprise) et fenêtre centrée, barre des tâches exclue."""
+        screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        width = min(int(1120 * self.scale), screen_w - 40)
+        height = min(int(700 * self.scale), screen_h - 140)
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2 - 30)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min(int(980 * self.scale), width), min(int(600 * self.scale), height))
+
+    def surface_color(self) -> str:
+        return ttk.Style().lookup("TFrame", "background") or ("#1c1c1c" if self.dark else "#fafafa")
+
     # ------------------------------------------------------------------ construction de l'UI
     def build_ui(self):
         for child in self.root.winfo_children():
@@ -120,18 +187,23 @@ class PhotoSplitterGUI:
         # barre d'état d'abord : elle reste collée en bas
         status_frame = ttk.Frame(self.root)
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        self.status_bar = ttk.Label(status_frame, textvariable=self.status_text, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar = ttk.Label(
+            status_frame, textvariable=self.status_text, style="Hint.TLabel", anchor=tk.W, padding=(22, 4, 22, 8)
+        )
         self.status_bar.pack(fill=tk.X)
 
-        container = ttk.Frame(self.root, padding=12)
+        container = ttk.Frame(self.root, padding=(22, 16, 22, 16))
         container.pack(fill=tk.BOTH, expand=True)
         container.columnconfigure(0, weight=1)
         container.rowconfigure(1, weight=1)
 
         header = ttk.Frame(container)
-        header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 8))
-        ttk.Label(header, text=t("app_heading"), font=("Segoe UI", 18, "bold")).pack(side=tk.LEFT)
-        ttk.Button(header, text=t("about"), command=self.show_about).pack(side=tk.RIGHT)
+        header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 14))
+        titles = ttk.Frame(header)
+        titles.pack(side=tk.LEFT)
+        ttk.Label(titles, text=t("app_heading"), style="Title.TLabel").pack(anchor=tk.W)
+        ttk.Label(titles, text=t("app_subtitle"), style="Subtitle.TLabel").pack(anchor=tk.W)
+        ttk.Button(header, text=t("about"), command=self.show_about).pack(side=tk.RIGHT, anchor=tk.S)
         language_box = ttk.Combobox(
             header,
             state="readonly",
@@ -140,33 +212,39 @@ class PhotoSplitterGUI:
         )
         language_box.set(i18n.LANGUAGES[i18n.get_language()])
         language_box.bind("<<ComboboxSelected>>", lambda e: self.change_language(language_box.current()))
-        language_box.pack(side=tk.RIGHT, padx=(0, 8))
-        ttk.Label(header, text=t("language")).pack(side=tk.RIGHT, padx=(0, 4))
+        language_box.pack(side=tk.RIGHT, padx=(0, 10), anchor=tk.S)
+        ttk.Label(header, text=t("language"), style="Subtitle.TLabel").pack(side=tk.RIGHT, padx=(0, 6), anchor=tk.S, pady=(0, 6))
 
         self.notebook = notebook = ttk.Notebook(container)
         notebook.grid(row=1, column=0, sticky=tk.NSEW)
-        tab_files = ttk.Frame(notebook, padding=10)
-        tab_settings = ttk.Frame(notebook, padding=10)
+        tab_files = ttk.Frame(notebook, padding=14)
+        tab_settings = ttk.Frame(notebook, padding=14)
         notebook.add(tab_files, text=t("tab_files"))
         notebook.add(tab_settings, text=t("tab_settings"))
         self.build_files_tab(tab_files)
         self.build_settings_tab(tab_settings)
 
-        preview_frame = ttk.LabelFrame(container, text=t("preview_group"), padding=10)
-        preview_frame.grid(row=1, column=1, sticky=tk.NSEW, padx=(12, 0))
-        self.canvas = tk.Canvas(preview_frame, width=400, height=360, bg="#f0f0f0", highlightthickness=1)
-        self.canvas.pack(fill=tk.BOTH, expand=False)
-        ttk.Label(preview_frame, textvariable=self.selected_file_info, wraplength=380, justify=tk.LEFT).pack(
-            fill=tk.X, pady=(8, 0)
+        preview_frame = ttk.LabelFrame(container, text=t("preview_group"), padding=12)
+        preview_frame.grid(row=1, column=1, sticky=tk.NSEW, padx=(16, 0))
+        self.preview_w, self.preview_h = int(400 * self.scale), int(380 * self.scale)
+        self.canvas = tk.Canvas(
+            preview_frame, width=self.preview_w, height=self.preview_h, bg=self.surface_color(), highlightthickness=0
         )
+        self.canvas.pack(fill=tk.BOTH, expand=False)
+        ttk.Label(
+            preview_frame, textvariable=self.selected_file_info, wraplength=self.preview_w - 20, justify=tk.LEFT
+        ).pack(fill=tk.X, pady=(10, 0))
+        self.draw_preview_placeholder()
 
         control_frame = ttk.Frame(container)
-        control_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(12, 0))
+        control_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(16, 0))
         self.progress = ttk.Progressbar(control_frame, variable=self.progress_value, maximum=100)
-        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 12))
+        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 16))
         self.order_button = ttk.Button(control_frame, text=t("btn_order"), command=self.open_order_window)
-        self.order_button.pack(side=tk.LEFT, padx=(0, 8))
-        self.process_button = ttk.Button(control_frame, text=t("btn_process"), command=self.start_processing)
+        self.order_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.process_button = ttk.Button(
+            control_frame, text=t("btn_process"), command=self.start_processing, style=self.accent_style
+        )
         self.process_button.pack(side=tk.LEFT)
         self.cancel_button = ttk.Button(control_frame, text=t("btn_cancel"), command=self.cancel_processing)
         self.apply_processing_state()
@@ -186,19 +264,18 @@ class PhotoSplitterGUI:
 
         list_frame = ttk.Frame(tab)
         list_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        self.listbox = tk.Listbox(list_frame, selectmode=tk.SINGLE, height=8)
+        self.listbox = ttk.Treeview(list_frame, show="tree", selectmode="browse", height=6)
+        self.listbox.column("#0", stretch=True)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.listbox.bind("<<ListboxSelect>>", self.on_list_select)
+        self.listbox.bind("<<TreeviewSelect>>", self.on_list_select)
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
         scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-        self.listbox.config(yscrollcommand=scrollbar.set)
-        self.drop_hint = ttk.Label(
-            tab, text=t("drop_hint") if DND_FILES else "", foreground="#666666"
-        )
-        self.drop_hint.grid(row=2, column=0, sticky=tk.W, pady=(4, 0))
+        self.listbox.configure(yscrollcommand=scrollbar.set)
+        self.drop_hint = ttk.Label(tab, text=t("drop_hint") if DND_FILES else "", style="Hint.TLabel")
+        self.drop_hint.grid(row=2, column=0, sticky=tk.W, pady=(6, 0))
 
-        dest = ttk.LabelFrame(tab, text=t("dest_group"), padding=8)
-        dest.grid(row=3, column=0, sticky=tk.EW, pady=(10, 0))
+        dest = ttk.LabelFrame(tab, text=t("dest_group"), padding=12)
+        dest.grid(row=3, column=0, sticky=tk.EW, pady=(14, 0))
         dest.columnconfigure(0, weight=1)
         ttk.Entry(dest, textvariable=self.dest_dir, state="readonly").grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
         ttk.Button(dest, text=t("choose_folder"), command=self.choose_dest).grid(row=0, column=1, padx=(0, 4))
@@ -210,8 +287,8 @@ class PhotoSplitterGUI:
     def build_settings_tab(self, tab):
         tab.columnconfigure(0, weight=1)
 
-        frame_group = ttk.LabelFrame(tab, text=t("frame_group"), padding=8)
-        frame_group.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
+        frame_group = ttk.LabelFrame(tab, text=t("frame_group"), padding=12)
+        frame_group.grid(row=0, column=0, sticky=tk.EW, pady=(0, 12))
         ttk.Label(frame_group, text=t("frame_ratio")).grid(row=0, column=0, sticky=tk.W)
         ttk.Spinbox(frame_group, from_=0.01, to=0.2, increment=0.01, textvariable=self.frame_ratio, width=8).grid(
             row=0, column=1, padx=8
@@ -227,8 +304,8 @@ class PhotoSplitterGUI:
         self.border_color.trace_add("write", lambda *_: self.update_color_swatch())
         self.update_color_swatch()
 
-        fill_group = ttk.LabelFrame(tab, text=t("fill_group"), padding=8)
-        fill_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
+        fill_group = ttk.LabelFrame(tab, text=t("fill_group"), padding=12)
+        fill_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 12))
         ttk.Radiobutton(fill_group, text=t("fill_black"), value="black", variable=self.landscape_fill_mode).grid(
             row=0, column=0, sticky=tk.W, padx=(0, 16)
         )
@@ -243,8 +320,8 @@ class PhotoSplitterGUI:
         )
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
 
-        sig_group = ttk.LabelFrame(tab, text=t("signature_group"), padding=8)
-        sig_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
+        sig_group = ttk.LabelFrame(tab, text=t("signature_group"), padding=12)
+        sig_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 12))
         sig_group.columnconfigure(0, weight=1)
         sig_row = ttk.Frame(sig_group)
         sig_row.grid(row=0, column=0, columnspan=4, sticky=tk.EW)
@@ -267,7 +344,7 @@ class PhotoSplitterGUI:
             row=1, column=3, sticky=tk.W, pady=(8, 0), padx=8
         )
 
-        output_group = ttk.LabelFrame(tab, text=t("output_group"), padding=8)
+        output_group = ttk.LabelFrame(tab, text=t("output_group"), padding=12)
         output_group.grid(row=3, column=0, sticky=tk.EW)
         ttk.Label(output_group, text=t("jpeg_quality")).grid(row=0, column=0, sticky=tk.W)
         ttk.Spinbox(output_group, from_=50, to=100, increment=1, textvariable=self.jpeg_quality, width=6).grid(
@@ -342,9 +419,9 @@ class PhotoSplitterGUI:
     def clear_selection(self):
         self.selected_paths = []
         self.order = []
-        self.listbox.delete(0, tk.END)
+        self.listbox.delete(*self.listbox.get_children())
         self.preview_image = None
-        self.canvas.delete("all")
+        self.draw_preview_placeholder()
         self.selected_file_info.set(t("preview_hint"))
 
     def choose_dest(self):
@@ -394,35 +471,49 @@ class PhotoSplitterGUI:
             pass
 
     def refresh_list(self):
-        self.listbox.delete(0, tk.END)
+        self.listbox.delete(*self.listbox.get_children())
         unique_paths = []
         for path in self.selected_paths:
             if path not in unique_paths:
                 unique_paths.append(path)
         self.selected_paths = unique_paths
-        for path in unique_paths:
-            self.listbox.insert(tk.END, path)
+        for index, path in enumerate(unique_paths):
+            self.listbox.insert("", tk.END, iid=str(index), text=f"  {path}")
 
     def on_list_select(self, event):
-        if not self.listbox.curselection():
+        selection = self.listbox.selection()
+        if not selection:
             return
-        index = self.listbox.curselection()[0]
-        path = self.selected_paths[index]
+        path = self.selected_paths[int(selection[0])]
         path_obj = Path(path)
         if path_obj.is_file():
             self.show_preview(path_obj)
         else:
-            self.canvas.delete("all")
+            self.draw_preview_placeholder()
             self.selected_file_info.set(t("preview_folder", path=path))
+
+    def draw_preview_placeholder(self):
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(
+            2, 2, self.preview_w - 2, self.preview_h - 2, outline="#8a8a8a", dash=(4, 4), width=1
+        )
+        self.canvas.create_text(
+            self.preview_w // 2,
+            self.preview_h // 2,
+            text=t("preview_empty"),
+            fill="#8a8a8a",
+            font=("Segoe UI", 12),
+            justify=tk.CENTER,
+        )
 
     def show_preview(self, path: Path):
         try:
             img = Image.open(path)
             img = ImageOps.exif_transpose(img)
-            img.thumbnail((400, 360))
+            img.thumbnail((self.preview_w, self.preview_h))
             self.preview_image = ImageTk.PhotoImage(img)
             self.canvas.delete("all")
-            self.canvas.create_image(200, 180, image=self.preview_image)
+            self.canvas.create_image(self.preview_w // 2, self.preview_h // 2, image=self.preview_image)
             width, height = img.size
             ratio = width / height if height else 0
             self.selected_file_info.set(t("preview_info", name=path.name, width=width, height=height, ratio=ratio))
@@ -481,6 +572,7 @@ class PhotoSplitterGUI:
             dict(self.collect_config()),
             self.order,
             self.preview_cache,
+            dark=self.dark,
             on_change=self.set_order,
             get_config=lambda: dict(self.collect_config()),
         )
@@ -608,6 +700,7 @@ class PhotoSplitterGUI:
 
 def create_root():
     """Fenêtre racine avec glisser-déposer si `tkinterdnd2` est disponible, sinon Tk standard."""
+    enable_dpi_awareness()
     if TkinterDnD is not None:
         try:
             return TkinterDnD.Tk()
@@ -628,7 +721,10 @@ def main(argv=None) -> int:
 
         def finish():
             root.update_idletasks()
-            summary = f"ok v{__version__} dnd={'yes' if hasattr(root, 'drop_target_register') else 'no'}"
+            summary = (
+                f"ok v{__version__} dnd={'yes' if hasattr(root, 'drop_target_register') else 'no'}"
+                f" theme={ttk.Style().theme_use()}"
+            )
             if out_file:
                 out_file.write_text(summary, encoding="utf-8")
             root.destroy()

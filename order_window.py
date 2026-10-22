@@ -5,6 +5,7 @@ import json
 import queue
 import threading
 import tkinter as tk
+from tkinter import ttk
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -15,9 +16,9 @@ from i18n import kind_label, t
 from utils import item_key, merge_order, planned_items, render_outputs
 
 COLUMNS = 3
-TILE_W = 210
-TILE_H = 280  # 3:4, comme la grille de profil Instagram
-GAP = 4
+BASE_TILE_W = 210
+BASE_TILE_H = 280  # 3:4, comme la grille de profil Instagram
+BASE_GAP = 4
 PREVIEW_SOURCE_SIDE = 1600  # la source est réduite avant rendu : cadre et flou sont relatifs, le rendu reste fidèle
 DRAG_THRESHOLD = 6
 
@@ -57,8 +58,16 @@ class OrderWindow(tk.Toplevel):
         cache: Dict[str, Tuple[str, Image.Image]],
         on_change: Callable[[List[str]], None],
         get_config: Callable[[], dict],
+        dark: bool = False,
     ):
         super().__init__(parent)
+        scale = max(1.0, self.winfo_fpixels("1i") / 96)
+        self.scale = scale
+        self.TILE_W = int(BASE_TILE_W * scale)
+        self.TILE_H = int(BASE_TILE_H * scale)
+        self.GAP = max(2, int(BASE_GAP * scale))
+        self.dark = dark
+        self.bg = "#000000" if dark else "#ffffff"  # fond de la grille, comme Instagram
         self.title(t("order_title"))
         self.files = list(files)
         self.config_snapshot = dict(config)
@@ -81,28 +90,31 @@ class OrderWindow(tk.Toplevel):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        canvas_width = COLUMNS * TILE_W + (COLUMNS + 1) * GAP
-        self.geometry(f"{canvas_width + 40}x760")
-        self.minsize(canvas_width + 40, 420)
+        canvas_width = COLUMNS * self.TILE_W + (COLUMNS + 1) * self.GAP
+        self.geometry(f"{canvas_width + int(60 * self.scale)}x{int(800 * self.scale)}")
+        self.minsize(canvas_width + int(60 * self.scale), int(440 * self.scale))
 
-        toolbar = tk.Frame(self, padx=8, pady=6)
-        toolbar.pack(fill=tk.X)
-        tk.Button(toolbar, text=t("order_refresh"), command=self.refresh).pack(side=tk.LEFT)
-        tk.Button(toolbar, text=t("order_reset"), command=self.reset_order).pack(side=tk.LEFT, padx=(6, 0))
-        tk.Button(toolbar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
+        root_frame = ttk.Frame(self, padding=(16, 12, 16, 14))
+        root_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.hint = tk.Label(self, text=t("order_hint"), anchor=tk.W, justify=tk.LEFT, wraplength=canvas_width, padx=8)
+        toolbar = ttk.Frame(root_frame)
+        toolbar.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(toolbar, text=t("order_refresh"), command=self.refresh).pack(side=tk.LEFT)
+        ttk.Button(toolbar, text=t("order_reset"), command=self.reset_order).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(toolbar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
+
+        self.hint = ttk.Label(root_frame, text=t("order_hint"), justify=tk.LEFT, wraplength=canvas_width)
         self.hint.pack(fill=tk.X)
         self.status = tk.StringVar(value="")
-        tk.Label(self, textvariable=self.status, anchor=tk.W, padx=8, fg="#555555").pack(fill=tk.X)
+        ttk.Label(root_frame, textvariable=self.status, style="Hint.TLabel").pack(fill=tk.X, pady=(4, 8))
 
-        body = tk.Frame(self)
-        body.pack(fill=tk.BOTH, expand=True, padx=8, pady=(4, 8))
-        self.canvas = tk.Canvas(body, width=canvas_width, bg="#ffffff", highlightthickness=1, highlightbackground="#bbbbbb")
-        scrollbar = tk.Scrollbar(body, orient=tk.VERTICAL, command=self.canvas.yview)
+        body = ttk.Frame(root_frame)
+        body.pack(fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(body, width=canvas_width, bg=self.bg, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=scrollbar.set)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+        scrollbar.pack(side=tk.LEFT, fill=tk.Y, padx=(6, 0))
 
         self.canvas.bind("<ButtonPress-1>", self._on_press)
         self.canvas.bind("<B1-Motion>", self._on_motion)
@@ -158,7 +170,7 @@ class OrderWindow(tk.Toplevel):
             try:
                 for kind, image in render_outputs(path, config, max_side=PREVIEW_SOURCE_SIDE):
                     thumb = image.copy()
-                    thumb.thumbnail((TILE_W * 2, TILE_H * 2), Image.Resampling.LANCZOS)  # marge pour un affichage net
+                    thumb.thumbnail((self.TILE_W * 2, self.TILE_H * 2), Image.Resampling.LANCZOS)  # marge pour un affichage net
                     if stop.is_set():
                         return
                     self.events.put(("thumb", item_key(path, kind), path, signature, thumb))
@@ -192,7 +204,7 @@ class OrderWindow(tk.Toplevel):
 
     def _set_thumb(self, tile: Tile, thumb: Image.Image) -> None:
         fitted = thumb.copy()
-        fitted.thumbnail((TILE_W, TILE_H), Image.Resampling.LANCZOS)
+        fitted.thumbnail((self.TILE_W, self.TILE_H), Image.Resampling.LANCZOS)
         tile.thumb = thumb
         tile.photo = ImageTk.PhotoImage(fitted)
         tile.error = ""
@@ -224,7 +236,7 @@ class OrderWindow(tk.Toplevel):
     # ------------------------------------------------------------------ drawing
     def _slot_origin(self, index: int) -> Tuple[int, int]:
         col, row = index % COLUMNS, index // COLUMNS
-        return GAP + col * (TILE_W + GAP), GAP + row * (TILE_H + GAP)
+        return self.GAP + col * (self.TILE_W + self.GAP), self.GAP + row * (self.TILE_H + self.GAP)
 
     def redraw(self) -> None:
         canvas = self.canvas
@@ -233,47 +245,50 @@ class OrderWindow(tk.Toplevel):
             x, y = self._slot_origin(index)
             self._draw_tile(tile, index, x, y)
         rows = (len(self.tiles) + COLUMNS - 1) // COLUMNS
-        height = GAP + rows * (TILE_H + GAP)
-        canvas.configure(scrollregion=(0, 0, COLUMNS * TILE_W + (COLUMNS + 1) * GAP, max(height, 1)))
+        height = self.GAP + rows * (self.TILE_H + self.GAP)
+        canvas.configure(scrollregion=(0, 0, COLUMNS * self.TILE_W + (COLUMNS + 1) * self.GAP, max(height, 1)))
 
     def _draw_tile(self, tile: Tile, index: int, x: int, y: int) -> None:
         canvas = self.canvas
         dragging = self.drag is not None and self.drag.get("moved") and self.drag["index"] == index
-        canvas.create_rectangle(x, y, x + TILE_W, y + TILE_H, fill="#1e1e1e", outline="")
+        canvas.create_rectangle(x, y, x + self.TILE_W, y + self.TILE_H, fill="#1e1e1e" if not self.dark else "#161616", outline="")
         if tile.photo is not None:
-            canvas.create_image(x + TILE_W // 2, y + TILE_H // 2, image=tile.photo)
+            canvas.create_image(x + self.TILE_W // 2, y + self.TILE_H // 2, image=tile.photo)
             if dragging:
-                canvas.create_rectangle(x, y, x + TILE_W, y + TILE_H, fill="#ffffff", stipple="gray50", outline="")
+                canvas.create_rectangle(x, y, x + self.TILE_W, y + self.TILE_H, fill="#ffffff", stipple="gray50", outline="")
         elif tile.error:
             canvas.create_text(
-                x + TILE_W // 2, y + TILE_H // 2, text=t("order_error", message=tile.error),
-                fill="#ff8888", width=TILE_W - 16, justify=tk.CENTER,
+                x + self.TILE_W // 2, y + self.TILE_H // 2, text=t("order_error", message=tile.error),
+                fill="#ff8888", width=self.TILE_W - 16, justify=tk.CENTER,
             )
         else:
-            canvas.create_text(x + TILE_W // 2, y + TILE_H // 2, text="…", fill="#aaaaaa", font=("Segoe UI", 20))
+            canvas.create_text(x + self.TILE_W // 2, y + self.TILE_H // 2, text="…", fill="#777777", font=("Segoe UI", 20))
 
         # numéro d'ordre (celui qui préfixera le fichier)
-        canvas.create_oval(x + 6, y + 6, x + 34, y + 34, fill="#0095f6", outline="#ffffff", width=2)
-        canvas.create_text(x + 20, y + 20, text=str(index + 1), fill="#ffffff", font=("Segoe UI", 10, "bold"))
+        s = self.scale
+        m, d = int(8 * s), int(30 * s)
+        canvas.create_oval(x + m, y + m, x + m + d, y + m + d, fill="#0095f6", outline="#ffffff", width=2)
+        canvas.create_text(x + m + d // 2, y + m + d // 2, text=str(index + 1), fill="#ffffff", font=("Segoe UI", 10, "bold"))
         # légende
-        canvas.create_rectangle(x, y + TILE_H - 34, x + TILE_W, y + TILE_H, fill="#000000", stipple="gray50", outline="")
+        cap = int(36 * s)
+        canvas.create_rectangle(x, y + self.TILE_H - cap, x + self.TILE_W, y + self.TILE_H, fill="#000000", stipple="gray50", outline="")
         canvas.create_text(
-            x + 6, y + TILE_H - 17, anchor=tk.W, fill="#ffffff", font=("Segoe UI", 8),
-            text=f"{tile.source.name}\n{kind_label(tile.kind)}", width=TILE_W - 12,
+            x + int(8 * s), y + self.TILE_H - cap // 2, anchor=tk.W, fill="#ffffff", font=("Segoe UI", 8),
+            text=f"{tile.source.name}\n{kind_label(tile.kind)}", width=self.TILE_W - int(16 * s),
         )
 
     # ------------------------------------------------------------------ drag and drop
     def _tile_at(self, x: float, y: float) -> Optional[int]:
-        col = int((x - GAP) // (TILE_W + GAP))
-        row = int((y - GAP) // (TILE_H + GAP))
+        col = int((x - self.GAP) // (self.TILE_W + self.GAP))
+        row = int((y - self.GAP) // (self.TILE_H + self.GAP))
         if not 0 <= col < COLUMNS or row < 0:
             return None
         index = row * COLUMNS + col
         return index if index < len(self.tiles) else None
 
     def _slot_at(self, x: float, y: float) -> int:
-        col = min(COLUMNS - 1, max(0, int((x - GAP) // (TILE_W + GAP))))
-        row = max(0, int((y - GAP) // (TILE_H + GAP)))
+        col = min(COLUMNS - 1, max(0, int((x - self.GAP) // (self.TILE_W + self.GAP))))
+        row = max(0, int((y - self.GAP) // (self.TILE_H + self.GAP)))
         return min(len(self.tiles) - 1, row * COLUMNS + col)
 
     def _on_press(self, event) -> None:
@@ -296,14 +311,14 @@ class OrderWindow(tk.Toplevel):
         if tile.photo is not None:
             canvas.create_image(x, y, image=tile.photo, tags="ghost")
             canvas.create_rectangle(
-                x - TILE_W // 2, y - TILE_H // 2, x + TILE_W // 2, y + TILE_H // 2,
+                x - self.TILE_W // 2, y - self.TILE_H // 2, x + self.TILE_W // 2, y + self.TILE_H // 2,
                 outline="#0095f6", width=3, tags="ghost",
             )
         target = self._slot_at(x, y)
         self.drag["target"] = target
         tx, ty = self._slot_origin(target)
         canvas.delete("slot")
-        canvas.create_rectangle(tx, ty, tx + TILE_W, ty + TILE_H, outline="#ffb400", width=4, tags="slot")
+        canvas.create_rectangle(tx, ty, tx + self.TILE_W, ty + self.TILE_H, outline="#ffb400", width=4, tags="slot")
         canvas.tag_raise("ghost")
         # défilement automatique près des bords
         if event.y < 30:
