@@ -42,6 +42,22 @@ class GuiBuildTests(unittest.TestCase):
         self.assertNotIn("github_token", config)  # l'ancien jeton n'est plus conservé
         self.assertIn("output_format", config)
 
+    def test_guide_opens_once_and_follows_the_language(self):
+        self.app.show_guide()
+        first = self.app.guide_window
+        self.app.show_guide()
+        self.assertIs(self.app.guide_window, first)  # pas de seconde fenêtre
+        self.root.update()
+        self.assertIn("Premiers pas", first.text.get("1.0", "end"))
+        first.show_topic(len(first.topics) - 1)  # toutes les rubriques s'affichent
+        for index in range(len(first.topics)):
+            first.show_topic(index)
+        self.app.change_language(1)  # la fenêtre se ferme, l'appli est reconstruite
+        self.root.update()
+        self.assertFalse(first.winfo_exists())
+        self.app.show_guide()
+        self.assertIn("Getting started", self.app.guide_window.text.get("1.0", "end"))
+
     def test_startup_check_runs_every_launch_even_right_after_a_check(self):
         import os
         from unittest import mock

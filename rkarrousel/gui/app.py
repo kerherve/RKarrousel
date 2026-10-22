@@ -11,6 +11,7 @@ from rkarrousel.gui.batch_controller import BatchController
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.drive_controller import DriveController
 from rkarrousel.gui.files_tab import FilesTab, PreviewPanel
+from rkarrousel.gui.guide_window import GuideWindow
 from rkarrousel.gui.order_flow import OrderController
 from rkarrousel.gui.settings_tab import SettingsTab
 from rkarrousel.gui.system import FROZEN
@@ -42,6 +43,8 @@ class PhotoSplitterGUI:
         self.preview = self.files_tab = self.settings_tab = self.notebook = None
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.report_callback_exception = self.on_tk_exception
+        root.bind("<F1>", lambda _e: self.show_guide())
+        self.guide_window = None
         self.build_ui()
         ctx.set_status(t("status_ready"))
         ctx.bus.start()
@@ -106,6 +109,7 @@ class PhotoSplitterGUI:
         ttk.Label(titles, text=t("app_heading"), style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(titles, text=t("app_subtitle"), style="Subtitle.TLabel").pack(anchor=tk.W)
         ttk.Button(header, text=t("about"), command=self.show_about).pack(side=tk.RIGHT, anchor=tk.S)
+        ttk.Button(header, text=t("guide"), command=self.show_guide).pack(side=tk.RIGHT, anchor=tk.S, padx=(0, 8))
 
     def _build_controls(self, container: ttk.Frame) -> None:
         ctx = self.ctx
@@ -158,10 +162,20 @@ class PhotoSplitterGUI:
     def _rebuild(self) -> None:
         """Reconstruit l'interface (nouvelle langue ou nouveau thème) en restant sur l'onglet Réglages."""
         self.order.close()
+        if self.guide_window is not None and self.guide_window.winfo_exists():
+            self.guide_window.destroy()
         self.build_ui(select_tab=1)
         self.ctx.set_status(t("status_ready"))
 
     # ------------------------------------------------------------------ divers
+    def show_guide(self) -> None:
+        """Ouvre le guide (une seule fenêtre : si elle existe déjà, on la ramène devant)."""
+        if self.guide_window is not None and self.guide_window.winfo_exists():
+            self.guide_window.lift()
+            self.guide_window.focus_set()
+            return
+        self.guide_window = GuideWindow(self.root)
+
     def show_about(self) -> None:
         messagebox.showinfo(t("about"), t("about_text", version=__version__, log=str(LOG_PATH)))
 
