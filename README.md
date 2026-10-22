@@ -8,7 +8,7 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 | Photo source | Images produites |
 |---|---|
 | Portrait 3/4 | `_framed` : la photo encadrée |
-| Portrait 2/3 | `_with_sig` (ou `_framed` sans signature) : portrait 3/4 avec fond uni ou flouté ; `_crop34` : recadrage 3/4 de la photo (cadre blanc et signature), dont vous réglez la zone conservée |
+| Portrait 2/3 | `_with_sig` (ou `_framed` sans signature) : portrait 3/4 avec fond uni ou flouté ; `_crop34` : recadrage 3/4 de la photo (cadre blanc, sans signature), dont vous réglez la zone conservée |
 | Paysage 3/2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
 | Autre ratio | ignorée (signalée dans le récapitulatif) |
 

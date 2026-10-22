@@ -271,6 +271,17 @@ class CropTests(unittest.TestCase):
         self.assertEqual(utils.crop_offset_for({"crop_offsets": {str(self.src): 7}}, self.src), 1.0)
         self.assertEqual(utils.crop_offset_for({"crop_offsets": {str(self.src): "x"}}, self.src), 0.5)
 
+    def test_crop_is_never_signed(self):
+        sig = self.dir / "sig.png"
+        Image.new("RGBA", (200, 80), (255, 0, 0, 255)).save(sig)
+        plain = utils.render_output(self.src, {"frame_ratio": 0.03}, "crop34")
+        signed = utils.render_output(self.src, {"frame_ratio": 0.03, "signature_path": str(sig)}, "crop34")
+        self.assertEqual(plain.tobytes(), signed.tobytes())
+        # ...alors que l'image principale du portrait 2/3, elle, est signée
+        main_plain = utils.render_output(self.src, {"frame_ratio": 0.03}, "framed")
+        main_signed = utils.render_output(self.src, {"frame_ratio": 0.03, "signature_path": str(sig)}, "with_sig")
+        self.assertNotEqual(main_plain.tobytes(), main_signed.tobytes())
+
     def test_crop_is_saved_and_numbered_with_the_batch(self):
         utils.process_batch([self.src], self.out, {"frame_ratio": 0.03}, number_files=True)
         self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["01_p23_framed.jpg", "02_p23_crop34.jpg"])

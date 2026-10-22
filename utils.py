@@ -300,8 +300,9 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
 
 
 def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP_OFFSET) -> Image.Image:
-    """Recadre un portrait 2/3 en 3/4 (largeur complète, hauteur réduite, position verticale `offset`),
-    signe la zone conservée puis l'encadre : le résultat est un portrait 3/4 prêt pour Instagram."""
+    """Recadre un portrait 2/3 en 3/4 (largeur complète, hauteur réduite, position verticale `offset`)
+    puis l'encadre : le résultat est un portrait 3/4 prêt pour Instagram. Pas de signature : seules les
+    photos portrait d'origine sont signées, pas les images redimensionnées."""
     if img.mode != "RGB":
         img = img.convert("RGB")
     frame_ratio = config.get("frame_ratio", DEFAULT_FRAME_RATIO)
@@ -310,14 +311,7 @@ def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP
     crop_h = crop_height_for(width, height, frame_ratio)
     top = int(round((height - crop_h) * max(0.0, min(1.0, offset))))
     cropped = img.crop((0, top, width, top + crop_h))
-    sig_path = config.get("signature_path")
-    signed = add_signature_to_image(
-        cropped,
-        Path(sig_path) if sig_path else None,
-        position=signature_position_of(config),
-        user_scale=signature_scale_of(config),
-    )
-    return frame_image(signed, border, border_color_of(config))
+    return frame_image(cropped, border, border_color_of(config))
 
 
 def add_signature_to_image(

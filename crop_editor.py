@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Éditeur de recadrage 3/4 d'un portrait 2/3 : on fait glisser le cadre 3/4 sur la photo pour choisir
-la zone conservée, avec un aperçu du résultat final (cadre blanc et signature compris)."""
+la zone conservée, avec un aperçu du résultat final (cadre blanc compris)."""
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
