@@ -16,12 +16,13 @@ from utils import (
     process_image,
     save_config,
 )
+from version import __version__
 
 
 class PhotoSplitterGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Photo Splitter LR → Instagram")
+        self.root.title(f"Photo Splitter LR → Instagram v{__version__}")
         self.root.geometry("1100x750")
         self.root.minsize(1000, 700)
 
@@ -136,6 +137,7 @@ class PhotoSplitterGUI:
 
         self.process_button = ttk.Button(control_frame, text="Lancer le traitement", command=self.start_processing)
         self.process_button.pack(side=tk.RIGHT)
+        ttk.Button(control_frame, text="À propos", command=self.show_about).pack(side=tk.LEFT)
 
         self.status_bar = ttk.Label(self.root, textvariable=self.status_text, relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -144,6 +146,12 @@ class PhotoSplitterGUI:
         container.columnconfigure(3, weight=0)
         container.rowconfigure(1, weight=1)
         container.rowconfigure(2, weight=0)
+
+    def show_about(self):
+        messagebox.showinfo(
+            "À propos",
+            f"Photo Splitter LR → Instagram\nVersion {__version__}\n\nhttps://github.com/kerherve/imageSplitter",
+        )
 
     def add_files(self):
         initial_dir = self.source_dir.get() or os.getcwd()
