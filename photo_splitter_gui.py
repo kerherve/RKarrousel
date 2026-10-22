@@ -26,6 +26,7 @@ from utils import (
     DEFAULT_NUMBER_FILES,
     DEFAULT_SIGNATURE_POSITION,
     DEFAULT_SIGNATURE_SCALE,
+    KIND_CROP,
     LOG_PATH,
     OPTIONAL_KINDS,
     SIGNATURE_POSITIONS,
@@ -138,7 +139,7 @@ class PhotoSplitterGUI:
         self.border_color = tk.StringVar(value=cfg.get("border_color", DEFAULT_BORDER_COLOR_HEX))
         self.background_color = tk.StringVar(value=cfg.get("background_color", DEFAULT_BACKGROUND_COLOR_HEX))
         disabled = disabled_kinds_of(cfg)
-        self.kind_vars = {kind: tk.BooleanVar(value=kind not in disabled) for kind in OPTIONAL_KINDS}
+        self.kind_vars = {kind: tk.BooleanVar(value=kind not in disabled) for kind in OPTIONAL_KINDS + (KIND_CROP,)}
         self.blur_strength = tk.DoubleVar(value=cfg.get("blur_strength", DEFAULT_BLUR_STRENGTH))
         self.jpeg_quality = tk.IntVar(value=cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
         self.signature_position = tk.StringVar(value=cfg.get("signature_position", DEFAULT_SIGNATURE_POSITION))
@@ -378,12 +379,12 @@ class PhotoSplitterGUI:
 
         kinds_group = ttk.LabelFrame(tab, text=t("kinds_group"), padding=12)
         kinds_group.grid(row=4, column=0, sticky=tk.EW)
-        for position, kind in enumerate(OPTIONAL_KINDS):
+        for position, kind in enumerate(OPTIONAL_KINDS + (KIND_CROP,)):
             ttk.Checkbutton(kinds_group, text=kind_label(kind).capitalize(), variable=self.kind_vars[kind]).grid(
                 row=position // 2, column=position % 2, sticky=tk.W, padx=(0, 24), pady=2
             )
         ttk.Label(kinds_group, text=t("kinds_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(
-            row=2, column=0, columnspan=2, sticky=tk.W, pady=(6, 0)
+            row=3, column=0, columnspan=2, sticky=tk.W, pady=(6, 0)
         )
 
     # ------------------------------------------------------------------ glisser-déposer
@@ -635,9 +636,15 @@ class PhotoSplitterGUI:
             self.preview_cache,
             dark=self.dark,
             excluded=self.excluded,
+            on_crop=self.set_crop_offset,
             on_change=self.set_order,
             get_config=lambda: dict(self.collect_config()),
         )
+
+    def set_crop_offset(self, path: Path, offset: float):
+        """Mémorise le recadrage 3/4 choisi pour une photo (conservé d'une session à l'autre)."""
+        self.config.setdefault("crop_offsets", {})[str(path)] = round(float(offset), 4)
+        save_config(CONFIG_PATH, self.config)
 
     def set_order(self, order: List[str], excluded: Set[str]):
         self.order = list(order)

@@ -8,7 +8,7 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 | Photo source | Images produites |
 |---|---|
 | Portrait 3/4 | `_framed` : la photo encadrée |
-| Portrait 2/3 | `_with_sig` (ou `_framed` sans signature) : portrait 3/4 avec fond noir ou flouté |
+| Portrait 2/3 | `_with_sig` (ou `_framed` sans signature) : portrait 3/4 avec fond uni ou flouté ; `_crop34` : recadrage 3/4 de la photo (cadre blanc et signature), dont vous réglez la zone conservée |
 | Paysage 3/2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
 | Autre ratio | ignorée (signalée dans le récapitulatif) |
 
@@ -24,7 +24,9 @@ Téléchargez `RKarrousel.exe` depuis les *Releases* du dépôt, puis lancez-le.
   les fichiers générés sont préfixés `01_`, `02_`… selon cet ordre.
   Cliquez une image pour la sélectionner : **Voir en grand** (ou double-clic) ouvre le rendu en pleine résolution avec
   zoom, déplacement et une règle (clic droit + glisser) qui mesure en pixels, par exemple l'épaisseur du cadre ;
-  **Exclure** (ou touche Suppr) retire l'image : elle n'est ni générée ni numérotée, et on peut la réintégrer.
+  **Recadrer…** (ou double-clic sur un « recadrage 3/4 ») ouvre l'éditeur : on fait glisser le cadre 3/4 sur la photo
+  avec un aperçu du résultat, et le choix est mémorisé par photo ;
+  **Exclure** (ou touche Suppr, ou la croix de la vignette) retire l'image : elle n'est ni générée ni numérotée, et on peut la réintégrer.
 - **Réglages** : les types d'images produites pour les paysages se décochent aussi une fois pour toutes.
 - **Langue** : français ou anglais (liste en haut à droite).
 - En cas de problème, le journal `image_splitter.log` est créé à côté de l'exécutable.

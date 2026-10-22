@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Éditeur de recadrage 3/4 d'un portrait 2/3 : on fait glisser le cadre 3/4 sur la photo pour choisir
+la zone conservée, avec un aperçu du résultat final (cadre blanc et signature compris)."""
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk
+from typing import Callable, Optional
+
+from PIL import Image, ImageTk
+
+from i18n import t
+from utils import crop_height_for, crop_offset_for, open_image, render_crop_3_4
+
+WORK_SIDE = 1100  # la photo est réduite pour l'édition : le recadrage est relatif, le rendu reste fidèle
+
+
+class CropEditor(tk.Toplevel):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        source: Path,
+        config: dict,
+        on_apply: Callable[[float], None],
+        dark: bool = False,
+    ):
+        super().__init__(parent)
+        self.title(t("crop_title", name=source.name))
+        self.source, self.config_snapshot, self.on_apply = source, dict(config), on_apply
+        self.scale_ui = max(1.0, self.winfo_fpixels("1i") / 96)
+        self.bg = "#111111" if dark else "#2b2b2b"
+        self.offset = crop_offset_for(config, source)
+
+        img = open_image(source).convert("RGB")
+        img.thumbnail((WORK_SIDE, WORK_SIDE), Image.Resampling.LANCZOS)
+        self.work = img
+        self.photo: Optional[ImageTk.PhotoImage] = None
+        self.preview_photo: Optional[ImageTk.PhotoImage] = None
+        self.grab_dy = 0.0
+
+        self._build_ui()
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Return>", lambda e: self.apply())
+        self.bind("<Up>", lambda e: self._nudge(-0.01))
+        self.bind("<Down>", lambda e: self._nudge(0.01))
+        self.bind("<Shift-Up>", lambda e: self._nudge(-0.05))
+        self.bind("<Shift-Down>", lambda e: self._nudge(0.05))
+        self.transient(parent)
+        self.grab_set()
+        self.redraw()
+
+    # ------------------------------------------------------------------ UI
+    def _build_ui(self) -> None:
+        s = self.scale_ui
+        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.view_h = min(int(640 * s), screen_h - int(260 * s))
+        self.view_w = int(self.view_h * self.work.width / self.work.height)
+        self.disp_scale = self.view_h / self.work.height
+        self.preview_h = min(int(560 * s), self.view_h)
+        self.preview_w = int(self.preview_h * 3 / 4)
+
+        width = self.view_w + self.preview_w + int(110 * s)
+        height = self.view_h + int(150 * s)
+        x, y = max(0, (screen_w - width) // 2), max(0, (screen_h - height) // 2 - 30)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.resizable(False, False)
+
+        frame = ttk.Frame(self, padding=(16, 12, 16, 14))
+        frame.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(frame, text=t("crop_hint"), wraplength=width - int(60 * s)).pack(fill=tk.X, pady=(0, 10))
+
+        row = ttk.Frame(frame)
+        row.pack()
+        self.canvas = tk.Canvas(row, width=self.view_w, height=self.view_h, bg=self.bg, highlightthickness=0, cursor="sb_v_double_arrow")
+        self.canvas.pack(side=tk.LEFT)
+        side = ttk.Frame(row)
+        side.pack(side=tk.LEFT, padx=(16, 0), anchor=tk.N)
+        ttk.Label(side, text=t("crop_preview"), style="Hint.TLabel").pack(anchor=tk.W, pady=(0, 6))
+        self.preview = tk.Canvas(side, width=self.preview_w, height=self.preview_h, bg=self.bg, highlightthickness=0)
+        self.preview.pack()
+
+        bar = ttk.Frame(frame)
+        bar.pack(fill=tk.X, pady=(12, 0))
+        ttk.Button(bar, text=t("crop_top"), command=lambda: self.set_offset(0.0)).pack(side=tk.LEFT)
+        ttk.Button(bar, text=t("crop_center"), command=lambda: self.set_offset(0.5)).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(bar, text=t("crop_bottom"), command=lambda: self.set_offset(1.0)).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(bar, text=t("crop_apply"), command=self.apply, style="Accent.TButton").pack(side=tk.RIGHT)
+        ttk.Button(bar, text=t("crop_cancel"), command=self.destroy).pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._drag)
+        self.canvas.bind("<MouseWheel>", lambda e: self._nudge(-0.02 if e.delta > 0 else 0.02))
+        self.canvas.bind("<Button-4>", lambda e: self._nudge(-0.02))
+        self.canvas.bind("<Button-5>", lambda e: self._nudge(0.02))
+
+    # ------------------------------------------------------------------ géométrie du cadre
+    def _rect_height(self) -> float:
+        ratio = self.config_snapshot.get("frame_ratio", 0.04)
+        return crop_height_for(self.work.width, self.work.height, ratio) * self.disp_scale
+
+    def _rect_top(self) -> float:
+        return self.offset * (self.view_h - self._rect_height())
+
+    def set_offset(self, offset: float) -> None:
+        self.offset = max(0.0, min(1.0, offset))
+        self.redraw()
+
+    def _nudge(self, delta: float) -> None:
+        self.set_offset(self.offset + delta)
+
+    def _press(self, event) -> None:
+        top, height = self._rect_top(), self._rect_height()
+        # dans le cadre : on le saisit là où on a cliqué ; en dehors : il se centre sur le clic
+        self.grab_dy = event.y - top if top <= event.y <= top + height else height / 2
+        self._drag(event)
+
+    def _drag(self, event) -> None:
+        free = self.view_h - self._rect_height()
+        if free <= 0:
+            return
+        self.set_offset((event.y - self.grab_dy) / free)
+
+    def apply(self) -> None:
+        self.on_apply(self.offset)
+        self.destroy()
+
+    # ------------------------------------------------------------------ rendu
+    def redraw(self) -> None:
+        canvas = self.canvas
+        canvas.delete("all")
+        shown = self.work.resize((self.view_w, self.view_h), Image.Resampling.LANCZOS)
+        self.photo = ImageTk.PhotoImage(shown)
+        canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+        top, height = self._rect_top(), self._rect_height()
+        # zones écartées assombries
+        canvas.create_rectangle(0, 0, self.view_w, top, fill="#000000", stipple="gray75", outline="")
+        canvas.create_rectangle(0, top + height, self.view_w, self.view_h, fill="#000000", stipple="gray75", outline="")
+        canvas.create_rectangle(1, top, self.view_w - 1, top + height, outline="#ffb400", width=3)
+
+        result = render_crop_3_4(self.work, self.config_snapshot, self.offset)
+        result.thumbnail((self.preview_w, self.preview_h), Image.Resampling.LANCZOS)
+        self.preview_photo = ImageTk.PhotoImage(result)
+        self.preview.delete("all")
+        self.preview.create_image(self.preview_w // 2, self.preview_h // 2, image=self.preview_photo)

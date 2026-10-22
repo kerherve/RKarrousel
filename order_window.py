@@ -13,8 +13,9 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 from PIL import Image, ImageTk
 
 from i18n import kind_label, t
+from crop_editor import CropEditor
 from image_viewer import ImageViewer
-from utils import item_key, merge_order, planned_items, render_outputs
+from utils import KIND_CROP, crop_offset_for, item_key, merge_order, planned_items, render_outputs
 
 COLUMNS = 3
 BASE_TILE_W = 210
@@ -64,6 +65,7 @@ class OrderWindow(tk.Toplevel):
         get_config: Callable[[], dict],
         dark: bool = False,
         excluded: Optional[Set[str]] = None,
+        on_crop: Optional[Callable[[Path, float], None]] = None,
     ):
         super().__init__(parent)
         scale = max(1.0, self.winfo_fpixels("1i") / 96)
@@ -79,6 +81,7 @@ class OrderWindow(tk.Toplevel):
         self.cache = cache  # key -> (empreinte, miniature), partagé entre ouvertures
         self.on_change = on_change
         self.excluded: Set[str] = set(excluded or ())
+        self.on_crop = on_crop
         self.selected: Optional[int] = None
         self.get_config = get_config
 
@@ -115,6 +118,8 @@ class OrderWindow(tk.Toplevel):
         ttk.Button(toolbar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
         self.exclude_btn = ttk.Button(toolbar, text=t("order_exclude"), command=self.toggle_exclude)
         self.exclude_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self.crop_btn = ttk.Button(toolbar, text=t("order_crop"), command=self.crop_selected)
+        self.crop_btn.pack(side=tk.RIGHT, padx=(0, 8))
         self.view_btn = ttk.Button(toolbar, text=t("order_view"), command=self.view_selected)
         self.view_btn.pack(side=tk.RIGHT, padx=(0, 8))
         self._update_buttons()
@@ -143,6 +148,7 @@ class OrderWindow(tk.Toplevel):
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(label=t("order_view"), command=self.view_selected)
         self.menu.add_command(label=t("order_exclude"), command=self.toggle_exclude)
+        self.menu.add_command(label=t("order_crop"), command=self.crop_selected)
         self.canvas.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-2, "units"))
         self.canvas.bind("<Button-5>", lambda e: self.canvas.yview_scroll(2, "units"))
 
@@ -189,7 +195,10 @@ class OrderWindow(tk.Toplevel):
             mtime = path.stat().st_mtime
         except OSError:
             mtime = 0
-        return f"{key}|{mtime}"
+        offset = ""
+        if key.endswith(f"|{KIND_CROP}"):
+            offset = f"|{crop_offset_for(self.config_snapshot, path):.4f}"
+        return f"{key}|{mtime}{offset}"
 
     def _render_worker(self, paths: List[Path], config: dict, signature: str, stop: threading.Event) -> None:
         for path in paths:
@@ -263,9 +272,13 @@ class OrderWindow(tk.Toplevel):
         state = ["!disabled"] if tile else ["disabled"]
         self.view_btn.state(state)
         self.exclude_btn.state(state)
+        self.crop_btn.state(["!disabled"] if tile and tile.kind == KIND_CROP and self.on_crop else ["disabled"])
         self.exclude_btn.configure(text=t("order_restore") if tile and tile.excluded else t("order_exclude"))
         if hasattr(self, "menu"):
             self.menu.entryconfigure(1, label=t("order_restore") if tile and tile.excluded else t("order_exclude"))
+            self.menu.entryconfigure(
+                2, state=tk.NORMAL if tile and tile.kind == KIND_CROP and self.on_crop else tk.DISABLED
+            )
 
     def select(self, index: Optional[int]) -> None:
         self.selected = index
@@ -289,6 +302,23 @@ class OrderWindow(tk.Toplevel):
             return
         ImageViewer(self, tile.source, tile.kind, self.config_snapshot, dark=self.dark)
 
+    def crop_selected(self) -> None:
+        tile = self._selected_tile()
+        if tile is None or tile.kind != KIND_CROP or self.on_crop is None:
+            return
+        source = tile.source
+
+        def apply(offset: float) -> None:
+            self.on_crop(source, offset)
+            self.config_snapshot = dict(self.get_config())
+            keep = tile.key
+            self.start([t_.key for t_ in self.tiles])
+            for index, other in enumerate(self.tiles):
+                if other.key == keep:
+                    self.select(index)
+
+        CropEditor(self, source, self.config_snapshot, apply, dark=self.dark)
+
     def _on_double_click(self, event) -> None:
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         index = self._tile_at(x, y)
@@ -296,7 +326,10 @@ class OrderWindow(tk.Toplevel):
             return
         if index is not None:
             self.select(index)
-            self.view_selected()
+            if self.tiles[index].kind == KIND_CROP and self.on_crop:
+                self.crop_selected()  # double-clic sur un recadrage : on règle le cadrage
+            else:
+                self.view_selected()
 
     def _on_context(self, event) -> None:
         index = self._tile_at(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))

@@ -28,8 +28,9 @@ class RatioDetectionTests(unittest.TestCase):
 
     def test_kinds_per_ratio(self):
         self.assertEqual(utils.kinds_for_ratio("portrait_3_4", {}), ["framed"])
-        self.assertEqual(utils.kinds_for_ratio("portrait_2_3", {}), ["framed"])
-        self.assertEqual(utils.kinds_for_ratio("portrait_2_3", {"signature_path": "s.png"}), ["with_sig"])
+        self.assertEqual(utils.kinds_for_ratio("portrait_2_3", {}), ["framed", "crop34"])
+        self.assertEqual(utils.kinds_for_ratio("portrait_2_3", {"signature_path": "s.png"}), ["with_sig", "crop34"])
+        self.assertEqual(utils.kinds_for_ratio("portrait_2_3", {"disabled_kinds": ["crop34"]}), ["framed"])
         self.assertEqual(len(utils.kinds_for_ratio("landscape_2_3", {})), 4)
         self.assertEqual(utils.kinds_for_ratio(None, {}), [])
 
@@ -227,6 +228,57 @@ class ExclusionAndColorTests(unittest.TestCase):
         measured = utils.measure_border(img, (255, 255, 255), skip_color=utils.background_color_of(config))
         self.assertGreater(measured, 0)
         self.assertEqual(utils.measure_border(img, (255, 255, 255)), 0)
+
+
+class CropTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.out = self.dir / "out"
+        # dégradé vertical : la position du recadrage se voit dans la couleur
+        img = Image.new("RGB", (600, 900))
+        for y in range(900):
+            for x in range(0, 600, 50):
+                img.paste((y // 4 % 256, 80, 160), (x, y, x + 50, y + 1))
+        self.src = self.dir / "p23.jpg"
+        img.save(self.src, quality=95)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_portrait_2_3_now_yields_main_image_and_crop(self):
+        kinds = [k for k, _ in utils.render_outputs(self.src, {"frame_ratio": 0.03})]
+        self.assertEqual(kinds, ["framed", "crop34"])
+
+    def test_crop_is_exactly_3_4_after_the_frame(self):
+        img = utils.render_output(self.src, {"frame_ratio": 0.03}, "crop34")
+        self.assertAlmostEqual(img.width / img.height, 3 / 4, delta=0.002)
+
+    def test_crop_keeps_the_full_width(self):
+        config = {"frame_ratio": 0.03}
+        img = utils.render_output(self.src, config, "crop34")
+        border = round(600 * 0.03)
+        self.assertEqual(img.width, 600 + 2 * border)
+
+    def test_offset_moves_the_crop(self):
+        top = utils.render_output(self.src, {"frame_ratio": 0.03, "crop_offsets": {str(self.src): 0.0}}, "crop34")
+        bottom = utils.render_output(self.src, {"frame_ratio": 0.03, "crop_offsets": {str(self.src): 1.0}}, "crop34")
+        self.assertNotEqual(top.tobytes(), bottom.tobytes())
+        self.assertLess(top.getpixel((top.width // 2, top.height // 2))[0], bottom.getpixel((bottom.width // 2, bottom.height // 2))[0])
+
+    def test_offset_defaults_to_centre_and_is_clamped(self):
+        self.assertEqual(utils.crop_offset_for({}, self.src), 0.5)
+        self.assertEqual(utils.crop_offset_for({"crop_offsets": {str(self.src): 7}}, self.src), 1.0)
+        self.assertEqual(utils.crop_offset_for({"crop_offsets": {str(self.src): "x"}}, self.src), 0.5)
+
+    def test_crop_is_saved_and_numbered_with_the_batch(self):
+        utils.process_batch([self.src], self.out, {"frame_ratio": 0.03}, number_files=True)
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["01_p23_framed.jpg", "02_p23_crop34.jpg"])
+
+    def test_crop_can_be_excluded_or_disabled(self):
+        utils.process_batch([self.src], self.out, {}, excluded={utils.item_key(self.src, "crop34")})
+        self.assertEqual([p.name for p in self.out.iterdir()], ["p23_framed.jpg"])
+        self.assertEqual([k for k, _ in utils.render_outputs(self.src, {"disabled_kinds": ["crop34"]})], ["framed"])
 
 
 class ConfigTests(unittest.TestCase):

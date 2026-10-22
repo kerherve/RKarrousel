@@ -33,6 +33,8 @@ DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)
 DEFAULT_BACKGROUND_COLOR_HEX = "#000000"
 OPTIONAL_KINDS = ("part1", "part2", "part1_with_sig", "part2_with_sig")
+KIND_CROP = "crop34"  # recadrage 3/4 d'un portrait 2/3
+DEFAULT_CROP_OFFSET = 0.5
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
 DEFAULT_SIGNATURE_POSITION = "bottom-right"
@@ -149,6 +151,23 @@ def background_color_of(config: dict) -> Tuple[int, int, int]:
 def disabled_kinds_of(config: dict) -> set:
     value = config.get("disabled_kinds") or []
     return {str(kind) for kind in value} if isinstance(value, (list, tuple, set)) else set()
+
+
+def crop_offset_for(config: dict, path) -> float:
+    """Position verticale (0 = haut, 1 = bas) du recadrage 3/4 choisi pour cette photo."""
+    offsets = config.get("crop_offsets") or {}
+    try:
+        value = float(offsets.get(str(path), DEFAULT_CROP_OFFSET))
+    except (TypeError, ValueError, AttributeError):
+        return DEFAULT_CROP_OFFSET
+    return max(0.0, min(1.0, value))
+
+
+def crop_height_for(width: int, height: int, frame_ratio: float) -> int:
+    """Hauteur de la zone conservée pour que, une fois encadrée, l'image soit exactement en 3/4.
+    L'épaisseur du cadre suit la règle des autres sorties : frame_ratio × plus petit côté (la largeur)."""
+    border = max(1, int(round(width * frame_ratio)))
+    return min(height, int(round((4 * width + 2 * border) / 3)))
 
 
 def blur_strength_of(config: dict) -> float:
@@ -278,6 +297,27 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     y_offset = (portrait_height - framed.height) // 2
     background.paste(framed, (x_offset, y_offset))
     return background
+
+
+def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP_OFFSET) -> Image.Image:
+    """Recadre un portrait 2/3 en 3/4 (largeur complète, hauteur réduite, position verticale `offset`),
+    signe la zone conservée puis l'encadre : le résultat est un portrait 3/4 prêt pour Instagram."""
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    frame_ratio = config.get("frame_ratio", DEFAULT_FRAME_RATIO)
+    width, height = img.size
+    border = max(1, int(round(width * frame_ratio)))
+    crop_h = crop_height_for(width, height, frame_ratio)
+    top = int(round((height - crop_h) * max(0.0, min(1.0, offset))))
+    cropped = img.crop((0, top, width, top + crop_h))
+    sig_path = config.get("signature_path")
+    signed = add_signature_to_image(
+        cropped,
+        Path(sig_path) if sig_path else None,
+        position=signature_position_of(config),
+        user_scale=signature_scale_of(config),
+    )
+    return frame_image(signed, border, border_color_of(config))
 
 
 def add_signature_to_image(
@@ -560,7 +600,10 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict) -> List[str]:
     if ratio_type == "portrait_3_4":
         return ["framed"]
     if ratio_type == "portrait_2_3":
-        return ["with_sig" if config.get("signature_path") else "framed"]
+        kinds = ["with_sig" if config.get("signature_path") else "framed"]
+        if KIND_CROP not in disabled_kinds_of(config):
+            kinds.append(KIND_CROP)
+        return kinds
     if ratio_type == "landscape_2_3":
         disabled = disabled_kinds_of(config)
         return [kind for kind in OPTIONAL_KINDS if kind not in disabled]
@@ -568,7 +611,10 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict) -> List[str]:
 
 
 def iter_outputs(
-    img: Image.Image, config: dict, only: Optional[Collection[str]] = None
+    img: Image.Image,
+    config: dict,
+    only: Optional[Collection[str]] = None,
+    crop_offset: float = DEFAULT_CROP_OFFSET,
 ) -> Iterator[Tuple[str, Image.Image]]:
     """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque.
     `only` limite aux types demandés (les autres ne sont pas calculés) ; par défaut, tous les types actifs."""
@@ -579,7 +625,11 @@ def iter_outputs(
     if ratio_type == "portrait_3_4":
         yield "framed", render_portrait_3_4(img, config)
     elif ratio_type == "portrait_2_3":
-        yield wanted[0], render_portrait_2_3(img, config)
+        for kind in wanted:
+            if kind == KIND_CROP:
+                yield kind, render_crop_3_4(img, config, crop_offset)
+            else:
+                yield kind, render_portrait_2_3(img, config)
     elif ratio_type == "landscape_2_3":
         yield from iter_split_2_3_to_3_4(img, config, only=wanted)
 
@@ -640,7 +690,7 @@ def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> 
     img = open_image(path)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-    return list(iter_outputs(img, config))
+    return list(iter_outputs(img, config, crop_offset=crop_offset_for(config, path)))
 
 
 def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] = None) -> Optional[Image.Image]:
@@ -648,7 +698,7 @@ def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] =
     img = open_image(path)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-    for found, out in iter_outputs(img, config, only={kind}):
+    for found, out in iter_outputs(img, config, only={kind}, crop_offset=crop_offset_for(config, path)):
         if found == kind:
             return out
     return None
@@ -700,7 +750,7 @@ def process_image(
     quality = jpeg_quality_of(config)
     output_files: List[Path] = []
     wanted = [k for k in kinds_for_ratio(ratio_type, config) if item_key(input_path, k) not in (excluded or ())]
-    for kind, out_img in iter_outputs(img, config, only=wanted):
+    for kind, out_img in iter_outputs(img, config, only=wanted, crop_offset=crop_offset_for(config, input_path)):
         prefix = (prefixes or {}).get(item_key(input_path, kind), "")
         out_path = output_dir / output_name(input_path, kind, prefix)
         save_image(out_img, out_path, quality)
