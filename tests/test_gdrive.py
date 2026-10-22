@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rkarrousel.services import gdrive
+from rkarrousel.services.gdrive import transport
 
 
 class FakeGoogle(http.server.ThreadingHTTPServer):
@@ -151,7 +152,7 @@ def authorize_with_fake_browser(fake, deny=False, bad_state=False):
 
 class GDriveTests(unittest.TestCase):
     def setUp(self):
-        gdrive.RETRY_DELAY = 0.01
+        transport.RETRY_DELAY = 0.01
         self.fake = FakeGoogle()
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)

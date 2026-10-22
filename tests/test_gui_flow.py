@@ -88,9 +88,10 @@ class GuiFlowTests(unittest.TestCase):
 
     def test_drive_upload_after_processing(self):
         from rkarrousel.services import gdrive
+        from rkarrousel.services.gdrive import transport
         from tests.test_gdrive import FakeGoogle, authorize_with_fake_browser
 
-        gdrive.RETRY_DELAY = 0.01
+        transport.RETRY_DELAY = 0.01
         fake = FakeGoogle()
         self.addCleanup(fake.stop)
         token_path = self.dir / "token.json"
