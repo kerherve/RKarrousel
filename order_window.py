@@ -98,8 +98,12 @@ class OrderWindow(tk.Toplevel):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         canvas_width = COLUMNS * self.TILE_W + (COLUMNS + 1) * self.GAP
-        self.geometry(f"{canvas_width + int(60 * self.scale)}x{int(800 * self.scale)}")
-        self.minsize(canvas_width + int(60 * self.scale), int(440 * self.scale))
+        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        width = min(canvas_width + int(60 * self.scale), screen_w - 40)
+        height = min(int(800 * self.scale), screen_h - 120)
+        x, y = max(0, (screen_w - width) // 2), max(0, (screen_h - height) // 2 - 30)
+        self.geometry(f"{width}x{height}+{x}+{y}")  # centrée sur l'écran
+        self.minsize(min(canvas_width + int(60 * self.scale), width), min(int(440 * self.scale), height))
 
         root_frame = ttk.Frame(self, padding=(16, 12, 16, 14))
         root_frame.pack(fill=tk.BOTH, expand=True)

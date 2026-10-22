@@ -55,6 +55,7 @@ except Exception:  # pragma: no cover - dépend de l'installation
 logger = logging.getLogger("imagesplitter")
 WORKERS = max(1, min(3, os.cpu_count() or 1))
 MAX_ERRORS_SHOWN = 10
+THEME_CHOICES = ("auto", "light", "dark")
 
 
 def setup_logging() -> None:
@@ -221,6 +222,13 @@ class PhotoSplitterGUI:
         language_box.bind("<<ComboboxSelected>>", lambda e: self.change_language(language_box.current()))
         language_box.pack(side=tk.RIGHT, padx=(0, 10), anchor=tk.S)
         ttk.Label(header, text=t("language"), style="Subtitle.TLabel").pack(side=tk.RIGHT, padx=(0, 6), anchor=tk.S, pady=(0, 6))
+        theme_box = ttk.Combobox(
+            header, state="readonly", width=9, values=[t("theme_auto"), t("theme_light"), t("theme_dark")]
+        )
+        theme_box.current(THEME_CHOICES.index(self.config.get("theme", "auto")) if self.config.get("theme", "auto") in THEME_CHOICES else 0)
+        theme_box.bind("<<ComboboxSelected>>", lambda e: self.change_theme(theme_box.current()))
+        theme_box.pack(side=tk.RIGHT, padx=(0, 16), anchor=tk.S)
+        ttk.Label(header, text=t("theme"), style="Subtitle.TLabel").pack(side=tk.RIGHT, padx=(0, 6), anchor=tk.S, pady=(0, 6))
 
         self.notebook = notebook = ttk.Notebook(container)
         notebook.grid(row=1, column=0, sticky=tk.NSEW)
@@ -409,6 +417,18 @@ class PhotoSplitterGUI:
         self.build_ui()
         self.set_status(t("status_ready"))
 
+    def change_theme(self, index: int):
+        if not 0 <= index < len(THEME_CHOICES) or THEME_CHOICES[index] == self.config.get("theme", "auto"):
+            return
+        self.config["theme"] = THEME_CHOICES[index]
+        save_config(CONFIG_PATH, self.config)
+        if self.order_window is not None:
+            self.order_window.close()
+            self.order_window = None
+        self.dark = self.apply_theme()
+        self.build_ui()
+        self.set_status(t("status_ready"))
+
     def show_about(self):
         messagebox.showinfo(
             t("about"),
@@ -576,6 +596,7 @@ class PhotoSplitterGUI:
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
         cfg["language"] = i18n.get_language()
+        cfg.setdefault("theme", "auto")
         return cfg
 
     def on_close(self):
