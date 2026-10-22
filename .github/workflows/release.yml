@@ -83,9 +83,25 @@ jobs:
           for ($i = 0; $i -lt 30 -and -not (Test-Path $smoke); $i++) { Start-Sleep 1 }
           Get-Content $smoke
           if (-not ((Get-Content $smoke -Raw) -like "ok*")) { throw "installed app failed its smoke test" }
-          Start-Sleep 2
+
+      - name: Uninstall test (informative, never blocks a release)
+        continue-on-error: true
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "rk_install"
           $un = Get-ChildItem $dir -Filter "unins*.exe" | Select-Object -First 1
-          Start-Process $un.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          $log = Join-Path $env:RUNNER_TEMP "uninstall.log"
+          $p = Start-Process $un.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=`"$log`"" -PassThru
+          if (-not $p.WaitForExit(90000)) {
+            Write-Host "Uninstaller still running after 90 s, log so far:"
+            if (Test-Path $log) { Get-Content $log -Tail 40 }
+            Get-Process | Where-Object { $_.Name -like "*unins*" -or $_.Name -like "*RKarrousel*" } | Format-Table Name, Id
+            $p.Kill()
+            throw "uninstaller did not finish"
+          }
+          Write-Host "uninstaller exit code: $($p.ExitCode)"
+          if (Test-Path "$dir\RKarrousel.exe") { throw "RKarrousel.exe still present after uninstall" }
 
       - name: Keep installer as artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
