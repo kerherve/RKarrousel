@@ -137,6 +137,74 @@ class GuiFlowTests(unittest.TestCase):
             self.pump(lambda: self.dialogs)
         self.assertEqual(self.dialogs[-1][0], "showinfo")
 
+    # ------------------------------------------------------------------ fenêtre « Aperçu et ordre »
+    def open_order_window(self, photos):
+        self.app.files_tab.add_paths([str(p) for p in photos])
+        self.app.order.open()
+        window = self.app.order.window
+        self.pump(lambda: window.model.counts()[1] == window.model.counts()[0])  # tous les aperçus sont prêts
+        return window
+
+    def test_order_window_lists_every_output_and_renders_previews(self):
+        window = self.open_order_window(self.photos[:2])
+        self.assertEqual(len(window.tiles), 1 + 4)
+        self.assertTrue(all(tile.thumb is not None for tile in window.tiles))
+        self.assertEqual(window.status.get(), "5 image(s)")
+
+    def test_clicking_the_cross_excludes_then_restores(self):
+        window = self.open_order_window(self.photos[:1])
+        canvas = window.grid_canvas
+        x0, y0, x1, y1 = window.layout.cross_rect(*window.layout.slot_origin(0))
+        point = dict(x=(x0 + x1) // 2, y=(y0 + y1) // 2)
+        for expected in (1, 0):
+            canvas.event_generate("<ButtonPress-1>", **point)
+            canvas.event_generate("<ButtonRelease-1>", **point)
+            self.root.update()
+            self.assertEqual(len(self.app.ctx.session.excluded), expected)
+
+    def test_drag_and_drop_reorders_and_changes_the_numbering(self):
+        window = self.open_order_window(self.photos[:2])
+        first_key = window.tiles[0].key
+        canvas, layout = window.grid_canvas, window.layout
+
+        class Ev:
+            def __init__(self, point):
+                self.x, self.y = point
+                self.x_root, self.y_root = point
+
+        sx, sy = layout.slot_origin(0)
+        tx, ty = layout.slot_origin(3)
+        canvas._on_press(Ev((sx + 40, sy + 60)))
+        for step in range(1, 6):
+            canvas._on_motion(Ev((sx + 40 + (tx - sx) * step // 5, sy + 60 + (ty - sy) * step // 5)))
+        canvas._on_release(Ev((tx + 40, ty + 60)))
+        self.assertEqual(window.tiles[3].key, first_key)
+        self.assertEqual(self.app.ctx.session.order[3], first_key)
+        window.close()
+        self.app.order.window = None
+        self.run_batch()
+        names = sorted(p.name for p in self.out.iterdir())
+        self.assertTrue(any(name.startswith("04_a_p34_framed") for name in names), names)  # l'image déplacée est la 4e
+
+    def test_excluding_in_the_grid_skips_the_image_and_its_number(self):
+        window = self.open_order_window(self.photos[1:2])
+        window.select(1)
+        window.toggle_exclude()
+        window.close()
+        self.app.order.window = None
+        self.run_batch()
+        names = sorted(p.name for p in self.out.iterdir())
+        self.assertEqual(len(names), 3)
+        self.assertEqual([n[:2] for n in names], ["01", "02", "03"])
+
+    def test_crop_button_is_only_enabled_on_a_crop_tile(self):
+        window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
+        crop_index = window.model.index_of([t.key for t in window.tiles if t.kind == "crop34"][0])
+        window.select(0)
+        self.assertTrue(window.crop_btn.instate(["disabled"]))
+        window.select(crop_index)
+        self.assertTrue(window.crop_btn.instate(["!disabled"]))
+
 
 if __name__ == "__main__":
     unittest.main()

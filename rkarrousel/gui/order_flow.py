@@ -4,7 +4,7 @@ from tkinter import messagebox
 from typing import List, Optional, Set
 
 from rkarrousel.gui.context import AppContext
-from rkarrousel.gui.order_window import OrderWindow
+from rkarrousel.gui.order.window import OrderWindow
 from rkarrousel.i18n import t
 
 
