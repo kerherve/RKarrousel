@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageTk
 
 from i18n import t
-from utils import crop_height_for, crop_offset_for, frame_ratio_of, open_image, render_crop_3_4
+from utils import crop_box_for, crop_offset_for, frame_ratio_of, open_image, render_crop_3_4
 
 WORK_SIDE = 1100  # la photo est réduite pour l'édition : le recadrage est relatif, le rendu reste fidèle
 
@@ -40,10 +40,9 @@ class CropEditor(tk.Toplevel):
         self._build_ui()
         self.bind("<Escape>", lambda e: self.destroy())
         self.bind("<Return>", lambda e: self.apply())
-        self.bind("<Up>", lambda e: self._nudge(-0.01))
-        self.bind("<Down>", lambda e: self._nudge(0.01))
-        self.bind("<Shift-Up>", lambda e: self._nudge(-0.05))
-        self.bind("<Shift-Down>", lambda e: self._nudge(0.05))
+        for key, delta in (("Up", -0.01), ("Left", -0.01), ("Down", 0.01), ("Right", 0.01)):
+            self.bind(f"<{key}>", lambda e, d=delta: self._nudge(d))
+            self.bind(f"<Shift-{key}>", lambda e, d=delta: self._nudge(d * 5))
         self.transient(parent)
         self.grab_set()
         self.redraw()
@@ -70,7 +69,7 @@ class CropEditor(tk.Toplevel):
 
         row = ttk.Frame(frame)
         row.pack()
-        self.canvas = tk.Canvas(row, width=self.view_w, height=self.view_h, bg=self.bg, highlightthickness=0, cursor="sb_v_double_arrow")
+        self.canvas = tk.Canvas(row, width=self.view_w, height=self.view_h, bg=self.bg, highlightthickness=0, cursor="fleur")
         self.canvas.pack(side=tk.LEFT)
         side = ttk.Frame(row)
         side.pack(side=tk.LEFT, padx=(16, 0), anchor=tk.N)
@@ -93,12 +92,21 @@ class CropEditor(tk.Toplevel):
         self.canvas.bind("<Button-5>", lambda e: self._nudge(0.02))
 
     # ------------------------------------------------------------------ géométrie du cadre
-    def _rect_height(self) -> float:
-        ratio = frame_ratio_of(self.config_snapshot)
-        return crop_height_for(self.work.width, self.work.height, ratio) * self.disp_scale
+    def _box(self):
+        """(axe libre, largeur, hauteur) du cadre 3/4 en pixels d'affichage."""
+        axis, crop_w, crop_h = crop_box_for(self.work.width, self.work.height, frame_ratio_of(self.config_snapshot))
+        return axis, crop_w * self.disp_scale, crop_h * self.disp_scale
 
-    def _rect_top(self) -> float:
-        return self.offset * (self.view_h - self._rect_height())
+    def _free(self) -> float:
+        axis, rw, rh = self._box()
+        return (self.view_h - rh) if axis == "y" else (self.view_w - rw)
+
+    def _rect_pos(self) -> float:
+        return self.offset * self._free()
+
+    def _rect_size(self) -> float:
+        axis, rw, rh = self._box()
+        return rh if axis == "y" else rw
 
     def set_offset(self, offset: float) -> None:
         self.offset = max(0.0, min(1.0, offset))
@@ -107,17 +115,20 @@ class CropEditor(tk.Toplevel):
     def _nudge(self, delta: float) -> None:
         self.set_offset(self.offset + delta)
 
+    def _coord(self, event) -> float:
+        return event.y if self._box()[0] == "y" else event.x
+
     def _press(self, event) -> None:
-        top, height = self._rect_top(), self._rect_height()
+        pos, size = self._rect_pos(), self._rect_size()
         # dans le cadre : on le saisit là où on a cliqué ; en dehors : il se centre sur le clic
-        self.grab_dy = event.y - top if top <= event.y <= top + height else height / 2
+        self.grab_dy = self._coord(event) - pos if pos <= self._coord(event) <= pos + size else size / 2
         self._drag(event)
 
     def _drag(self, event) -> None:
-        free = self.view_h - self._rect_height()
+        free = self._free()
         if free <= 0:
             return
-        self.set_offset((event.y - self.grab_dy) / free)
+        self.set_offset((self._coord(event) - self.grab_dy) / free)
 
     def apply(self) -> None:
         self.on_apply(self.offset)
@@ -130,11 +141,17 @@ class CropEditor(tk.Toplevel):
         shown = self.work.resize((self.view_w, self.view_h), Image.Resampling.LANCZOS)
         self.photo = ImageTk.PhotoImage(shown)
         canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
-        top, height = self._rect_top(), self._rect_height()
-        # zones écartées assombries
-        canvas.create_rectangle(0, 0, self.view_w, top, fill="#000000", stipple="gray75", outline="")
-        canvas.create_rectangle(0, top + height, self.view_w, self.view_h, fill="#000000", stipple="gray75", outline="")
-        canvas.create_rectangle(1, top, self.view_w - 1, top + height, outline="#ffb400", width=3)
+        axis, rw, rh = self._box()
+        pos = self._rect_pos()
+        shade = dict(fill="#000000", stipple="gray75", outline="")
+        if axis == "y":  # zones écartées assombries, cadre pleine largeur
+            canvas.create_rectangle(0, 0, self.view_w, pos, **shade)
+            canvas.create_rectangle(0, pos + rh, self.view_w, self.view_h, **shade)
+            canvas.create_rectangle(1, pos, self.view_w - 1, pos + rh, outline="#ffb400", width=3)
+        else:            # cadre pleine hauteur, glissé horizontalement
+            canvas.create_rectangle(0, 0, pos, self.view_h, **shade)
+            canvas.create_rectangle(pos + rw, 0, self.view_w, self.view_h, **shade)
+            canvas.create_rectangle(pos, 1, pos + rw, self.view_h - 1, outline="#ffb400", width=3)
 
         result = render_crop_3_4(self.work, self.config_snapshot, self.offset)
         result.thumbnail((self.preview_w, self.preview_h), Image.Resampling.LANCZOS)

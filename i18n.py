@@ -178,8 +178,11 @@ STRINGS = {
         "order_error": "Erreur : {message}",
         "kind_framed": "encadrée",
         "kind_with_sig": "signée",
-        "kind_part1": "moitié gauche (panorama 1/2)",
-        "kind_part2": "moitié droite (panorama 2/2)",
+        "kind_part1": "panorama, partie 1",
+        "set_kind_part1": "Panorama : première partie (moitié gauche)",
+        "kind_part2": "panorama, partie 2",
+        "set_kind_part2": "Panorama : parties suivantes (moitié droite)",
+        "kind_part_n": "panorama, partie {n}",
         "kind_part1_with_sig": "portrait entier",
         "kind_part2_with_sig": "portrait entier (pivoté)",
     },
@@ -353,8 +356,11 @@ STRINGS = {
         "order_error": "Error: {message}",
         "kind_framed": "framed",
         "kind_with_sig": "signed",
-        "kind_part1": "left half (panorama 1/2)",
-        "kind_part2": "right half (panorama 2/2)",
+        "kind_part1": "panorama, part 1",
+        "set_kind_part1": "Panorama: first part (left half)",
+        "kind_part2": "panorama, part 2",
+        "set_kind_part2": "Panorama: following parts (right half)",
+        "kind_part_n": "panorama, part {n}",
         "kind_part1_with_sig": "full portrait",
         "kind_part2_with_sig": "full portrait (rotated)",
     },
@@ -382,4 +388,16 @@ def t(key: str, **values) -> str:
 
 
 def kind_label(kind: str) -> str:
+    """Libellé d'un type d'image ; « part3 », « part4 »… (tranches d'un grand panorama) sont numérotées."""
+    if f"kind_{kind}" not in STRINGS[DEFAULT_LANGUAGE] and kind.startswith("part") and kind[4:].isdigit():
+        return t("kind_part_n", n=int(kind[4:]))
     return t(f"kind_{kind}")
+
+
+def kind_setting_label(kind: str) -> str:
+    """Libellé d'une case à cocher des Réglages : « part1 » règle la première tranche d'un panorama,
+    « part2 » toutes les suivantes."""
+    if kind in ("part1", "part2"):
+        return t(f"set_kind_{kind}")
+    label = kind_label(kind)
+    return label[:1].upper() + label[1:]

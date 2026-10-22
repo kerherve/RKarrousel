@@ -17,7 +17,7 @@ from PIL import Image, ImageOps, ImageTk
 import gdrive
 import i18n
 import updater
-from i18n import kind_label, t
+from i18n import kind_setting_label, t
 from order_window import OrderWindow
 from update_dialog import UpdateDialog
 from utils import (
@@ -441,7 +441,7 @@ class PhotoSplitterGUI:
         kinds_group = ttk.LabelFrame(tab, text=t("kinds_group"), padding=12)
         kinds_group.grid(row=5, column=0, sticky=tk.EW)
         for position, kind in enumerate(OPTIONAL_KINDS + (KIND_CROP,)):
-            ttk.Checkbutton(kinds_group, text=kind_label(kind).capitalize(), variable=self.kind_vars[kind]).grid(
+            ttk.Checkbutton(kinds_group, text=kind_setting_label(kind), variable=self.kind_vars[kind]).grid(
                 row=position // 2, column=position % 2, sticky=tk.W, padx=(0, 24), pady=2
             )
         ttk.Label(kinds_group, text=t("kinds_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(

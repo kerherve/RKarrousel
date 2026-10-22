@@ -23,8 +23,20 @@ class RatioDetectionTests(unittest.TestCase):
         self.assertEqual(utils.detect_ratio_type(1200, 1800), "portrait_2_3")
         self.assertEqual(utils.detect_ratio_type(1800, 1200), "landscape_2_3")
 
-    def test_unsupported_ratio(self):
-        self.assertIsNone(utils.detect_ratio_type(1000, 1000))
+    def test_every_other_format_is_classified(self):
+        table = {
+            (1000, 1000): "square", (1250, 1000): "square", (800, 1000): "portrait_other",  # 4:5
+            (900, 1600): "portrait_other", (1200, 900): "landscape_other",                   # 9:16, 4:3
+            (1600, 900): "landscape_other", (3000, 1000): "landscape_other",                 # 16:9, 3:1
+        }
+        for size, expected in table.items():
+            self.assertEqual(utils.detect_ratio_type(*size), expected, size)
+        self.assertIsNone(utils.detect_ratio_type(0, 100))
+
+    def test_legacy_formats_keep_their_tolerance(self):
+        self.assertEqual(utils.detect_ratio_type(1200, 1590), "portrait_3_4")
+        self.assertEqual(utils.detect_ratio_type(1000, 1500), "portrait_2_3")
+        self.assertEqual(utils.detect_ratio_type(1500, 1000), "landscape_2_3")
 
     def test_kinds_per_ratio(self):
         self.assertEqual(utils.kinds_for_ratio("portrait_3_4", {}), ["framed"])
@@ -138,13 +150,20 @@ class BatchTests(unittest.TestCase):
             ["01_a_framed.jpg", "02_b_part1.jpg", "03_b_part1_with_sig.jpg", "04_b_part2.jpg", "05_b_part2_with_sig.jpg"],
         )
 
-    def test_unsupported_and_broken_files_are_reported(self):
-        odd = make_image(self.dir, "odd.jpg", (1000, 1000))
+    def test_too_panoramic_and_broken_files_are_reported(self):
+        panorama = make_image(self.dir, "pano.jpg", (12000, 400))
         broken = self.dir / "broken.jpg"
         broken.write_bytes(b"not an image")
-        results = utils.process_batch([odd, broken], self.out, {})
-        self.assertEqual([r.status for r in results], ["skipped", "error"])
+        results = utils.process_batch([panorama, broken], self.out, {})
+        self.assertEqual([r.status for r in results], ["error", "error"])
+        self.assertIn("panoramique", results[0].message)
         self.assertTrue(results[1].message)
+
+    def test_a_square_photo_is_now_processed(self):
+        square = make_image(self.dir, "sq.jpg", (1000, 1000))
+        (result,) = utils.process_batch([square], self.out, {})
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(sorted(p.name for p in result.outputs), ["sq_crop34.jpg", "sq_framed.jpg"])
 
     def test_cancel_stops_before_processing(self):
         src = make_image(self.dir, "a.jpg", (600, 800))
@@ -228,6 +247,100 @@ class ExclusionAndColorTests(unittest.TestCase):
         measured = utils.measure_border(img, (255, 255, 255), skip_color=utils.background_color_of(config))
         self.assertGreater(measured, 0)
         self.assertEqual(utils.measure_border(img, (255, 255, 255)), 0)
+
+
+class AnyFormatTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_panorama_part_count(self):
+        self.assertEqual(utils.panorama_parts(1200, 900), 2)    # 4:3
+        self.assertEqual(utils.panorama_parts(1600, 900), 3)    # 16:9
+        self.assertEqual(utils.panorama_parts(3000, 1000), 4)   # 3:1
+        with self.assertRaises(ValueError):
+            utils.panorama_parts(12000, 400)
+
+    def test_kinds_per_new_format(self):
+        self.assertEqual(utils.kinds_for_size(1000, 1000, {}), ["framed", "crop34"])
+        self.assertEqual(utils.kinds_for_size(800, 1000, {"signature_path": "s.png"}), ["with_sig", "crop34"])
+        self.assertEqual(
+            utils.kinds_for_size(1600, 900, {}),
+            ["part1", "part2", "part3", "part1_with_sig", "part2_with_sig", "crop34"],
+        )
+
+    def test_disabled_kinds_apply_to_panorama_parts(self):
+        config = {"disabled_kinds": ["part2", "crop34"]}  # part2 règle toutes les tranches après la première
+        self.assertEqual(utils.kinds_for_size(1600, 900, config), ["part1", "part1_with_sig", "part2_with_sig"])
+        self.assertEqual(utils.kinds_for_size(1600, 900, {"disabled_kinds": ["part1"]})[0], "part2")
+
+    def test_every_output_of_every_format_is_3_4(self):
+        for size in ((1000, 1000), (800, 1000), (900, 1600), (1200, 900), (1600, 900), (3000, 1000), (1250, 1000)):
+            src = make_image(self.dir, f"{size[0]}x{size[1]}.jpg", size)
+            for mode in ("black", "blur"):
+                for frame in (True, False):
+                    config = {"frame_ratio": 0.03, "frame_enabled": frame, "landscape_fill_mode": mode}
+                    outputs = utils.render_outputs(src, config)
+                    self.assertTrue(outputs, size)
+                    for kind, img in outputs:
+                        self.assertAlmostEqual(img.width / img.height, 3 / 4, delta=0.004, msg=f"{size} {kind} {mode} {frame}")
+
+    def test_panorama_parts_reassemble_the_photo_without_frame(self):
+        img = Image.new("RGB", (3000, 1000))
+        for x in range(0, 3000, 10):
+            img.paste((x // 12 % 256, (x // 7) % 256, (x // 5) % 256), (x, 0, x + 10, 1000))
+        src = self.dir / "pano.jpg"
+        img.save(src, quality=100, subsampling=0)
+        config = {"frame_enabled": False}
+        parts = [im for kind, im in utils.render_outputs(src, config) if kind.startswith("part") and "sig" not in kind]
+        self.assertEqual(len(parts), 4)
+        self.assertEqual(sum(p.width for p in parts), 3000)  # tranches contiguës : rien perdu, rien dupliqué
+        self.assertEqual({p.height for p in parts}, {parts[0].height})
+
+    def test_panorama_frame_surrounds_only_top_bottom_and_ends(self):
+        src = make_image(self.dir, "pano.jpg", (3000, 1000), (10, 20, 30))
+        parts = [im for kind, im in utils.render_outputs(src, {"frame_ratio": 0.03}) if kind.startswith("part") and "sig" not in kind]
+        b = utils.border_px_for(3000 // 4, 0.03)
+        self.assertEqual(parts[0].getpixel((0, parts[0].height // 2)), (255, 255, 255))     # bord extérieur gauche
+        self.assertEqual(parts[-1].getpixel((parts[-1].width - 1, parts[-1].height // 2)), (255, 255, 255))
+        self.assertEqual(parts[1].getpixel((0, parts[1].height // 2)), (10, 20, 30))         # jonction : pas de cadre
+        self.assertEqual(parts[1].getpixel((parts[1].width // 2, 0)), (255, 255, 255))       # haut encadré
+        self.assertGreater(b, 0)
+
+    def test_horizontal_crop_for_landscapes_and_squares(self):
+        src = make_image(self.dir, "l43.jpg", (1200, 900))
+        self.assertEqual(utils.crop_box_for(1200, 900, 0.0), ("x", 675, 900))
+        self.assertEqual(utils.crop_box_for(800, 1600, 0.0)[0], "y")
+        bare = utils.render_output(src, {"frame_enabled": False}, "crop34")
+        self.assertEqual(bare.size, (675, 900))
+        left = utils.render_output(src, {"frame_enabled": False, "crop_offsets": {str(src): 0.0}}, "crop34")
+        right = utils.render_output(src, {"frame_enabled": False, "crop_offsets": {str(src): 1.0}}, "crop34")
+        self.assertEqual(left.size, right.size)
+
+    def test_horizontal_crop_position_moves_the_window(self):
+        img = Image.new("RGB", (1200, 900))
+        for x in range(1200):
+            img.paste((x // 5 % 256, 40, 40), (x, 0, x + 1, 900))
+        src = self.dir / "grad.jpg"
+        img.save(src, quality=100, subsampling=0)
+        left = utils.render_output(src, {"frame_enabled": False, "crop_offsets": {str(src): 0.0}}, "crop34")
+        right = utils.render_output(src, {"frame_enabled": False, "crop_offsets": {str(src): 1.0}}, "crop34")
+        self.assertLess(left.getpixel((10, 450))[0], right.getpixel((10, 450))[0])
+
+    def test_batch_handles_a_mixed_folder(self):
+        files = [
+            make_image(self.dir, "a.jpg", (1200, 1600)), make_image(self.dir, "b.jpg", (1200, 900)),
+            make_image(self.dir, "c.jpg", (1600, 900)), make_image(self.dir, "d.jpg", (1000, 1000)),
+        ]
+        results = utils.process_batch(files, self.dir / "out", {"frame_ratio": 0.03}, number_files=True)
+        self.assertEqual([r.status for r in results], ["ok"] * 4)
+        names = sorted(p.name for p in (self.dir / "out").iterdir())
+        self.assertEqual(names[0], "01_a_framed.jpg")
+        self.assertEqual(len(names), 1 + 5 + 6 + 2)  # 3:4 → 1 ; 4:3 → 2 tranches + 2 entières + recadrage ; 16:9 → 3 + 2 + 1 ; carré → 2
+        self.assertTrue(all(n[:2].isdigit() for n in names))
 
 
 class NoFrameTests(unittest.TestCase):

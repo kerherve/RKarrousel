@@ -8,9 +8,12 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 | Photo source | Images produites |
 |---|---|
 | Portrait 3/4 | `_framed` : la photo encadrée |
-| Portrait 2/3 | `_with_sig` (ou `_framed` sans signature) : portrait 3/4 avec fond uni ou flouté ; `_crop34` : recadrage 3/4 de la photo (cadre blanc, sans signature), dont vous réglez la zone conservée |
-| Paysage 3/2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
-| Autre ratio | ignorée (signalée dans le récapitulatif) |
+| Portrait 2/3 ou autre portrait (4:5, 9:16…), carré, quasi carré (5:4) | `_with_sig` (ou `_framed` sans signature) : la photo entière sur un canvas 3/4, fond uni ou flouté ; `_crop34` : recadrage 3/4 (cadre blanc, sans signature) dont vous réglez la zone conservée |
+| Paysage 3:2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
+| Autre paysage (4:3, 16:9, panorama…) | `_part1` … `_partN` : le panorama découpé en N tranches 3/4 contiguës (N calculé, 10 au maximum) ; la photo entière droite et pivotée ; `_crop34` |
+
+**Tous les formats sont acceptés.** Le recadrage 3/4 se règle verticalement pour une photo plus étroite que le 3/4, et
+horizontalement pour une photo plus large. Chaque type d'image se décoche dans les Réglages ou s'exclut photo par photo.
 
 ## Utiliser l'appli (Windows)
 

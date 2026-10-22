@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -33,7 +34,10 @@ DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)
 DEFAULT_BACKGROUND_COLOR_HEX = "#000000"
 OPTIONAL_KINDS = ("part1", "part2", "part1_with_sig", "part2_with_sig")
-KIND_CROP = "crop34"  # recadrage 3/4 d'un portrait 2/3
+KIND_CROP = "crop34"  # recadrage 3/4 (portrait 2/3, autres portraits, carrés, paysages)
+SQUARE_MIN_RATIO = 0.95   # en dessous : portrait « autre » ; entre les deux : quasi carré
+LANDSCAPE_MIN_RATIO = 1.3  # au-dessus : paysage « autre » (découpé en panorama)
+MAX_PANORAMA_PARTS = 10    # un carrousel Instagram ne dépasse pas 10 images
 DEFAULT_CROP_OFFSET = 0.5
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
@@ -179,11 +183,21 @@ def crop_offset_for(config: dict, path) -> float:
     return max(0.0, min(1.0, value))
 
 
+def crop_box_for(width: int, height: int, frame_ratio: float) -> Tuple[str, int, int]:
+    """Zone conservée d'un recadrage 3/4 : (axe libre, largeur, hauteur), de sorte que l'image, une fois
+    encadrée, soit exactement en 3/4. Plus étroite que le 3/4 : toute la largeur est gardée et on règle la
+    position verticale (axe « y »). Sinon : toute la hauteur est gardée et on règle la position horizontale
+    (axe « x »). Le cadre suit la règle des autres sorties : frame_ratio × plus petit côté."""
+    if width * 4 <= height * 3:
+        border = border_px_for(width, frame_ratio)
+        return "y", width, min(height, int(round((4 * width + 2 * border) / 3)))
+    crop_w = int(round(0.75 * height / (1 + 0.5 * max(0.0, frame_ratio))))
+    return "x", max(1, min(width, crop_w)), height
+
+
 def crop_height_for(width: int, height: int, frame_ratio: float) -> int:
-    """Hauteur de la zone conservée pour que, une fois encadrée, l'image soit exactement en 3/4.
-    L'épaisseur du cadre suit la règle des autres sorties : frame_ratio × plus petit côté (la largeur)."""
-    border = border_px_for(width, frame_ratio)
-    return min(height, int(round((4 * width + 2 * border) / 3)))
+    """Hauteur de la zone conservée (voir crop_box_for)."""
+    return crop_box_for(width, height, frame_ratio)[2]
 
 
 def blur_strength_of(config: dict) -> float:
@@ -208,6 +222,10 @@ def is_supported_image(path: Path) -> bool:
 
 
 def detect_ratio_type(width: int, height: int) -> Optional[str]:
+    """Classe une image selon son format. Les trois formats historiques (±3 %) gardent leur traitement ;
+    tous les autres sont pris en charge : portrait « autre », quasi carré, paysage « autre »."""
+    if width <= 0 or height <= 0:
+        return None
     ratio = width / height
     if abs(ratio - 3 / 4) / (3 / 4) <= RATIO_TOLERANCE:
         return "portrait_3_4"
@@ -215,7 +233,22 @@ def detect_ratio_type(width: int, height: int) -> Optional[str]:
         return "portrait_2_3"
     if abs(ratio - 3 / 2) / (3 / 2) <= RATIO_TOLERANCE:
         return "landscape_2_3"
-    return None
+    if ratio < SQUARE_MIN_RATIO:
+        return "portrait_other"
+    if ratio <= LANDSCAPE_MIN_RATIO:
+        return "square"
+    return "landscape_other"
+
+
+def panorama_parts(width: int, height: int) -> int:
+    """Nombre d'images 3/4 dans lesquelles découper un paysage : le plus petit N dont chaque tranche
+    (largeur/N) peut devenir un 3/4 en rognant seulement le haut et le bas."""
+    parts = max(2, int(math.ceil(4 * (width / height) / 3 - 0.01)))
+    if parts > MAX_PANORAMA_PARTS:
+        raise ValueError(
+            f"Format trop panoramique ({width}x{height}) : il faudrait {parts} images, le maximum est {MAX_PANORAMA_PARTS}."
+        )
+    return parts
 
 
 def open_image(path: Path) -> Image.Image:
@@ -318,18 +351,23 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
 
 
 def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP_OFFSET) -> Image.Image:
-    """Recadre un portrait 2/3 en 3/4 (largeur complète, hauteur réduite, position verticale `offset`)
-    puis l'encadre : le résultat est un portrait 3/4 prêt pour Instagram. Pas de signature : seules les
-    photos portrait d'origine sont signées, pas les images redimensionnées."""
+    """Recadre n'importe quelle image en 3/4 (position `offset` de 0 à 1 le long de l'axe libre) puis l'encadre :
+    le résultat est un portrait 3/4 prêt pour Instagram. Pas de signature : seules les photos portrait d'origine
+    sont signées, pas les images redimensionnées."""
     if img.mode != "RGB":
         img = img.convert("RGB")
     frame_ratio = frame_ratio_of(config)
     width, height = img.size
-    border = border_px_for(width, frame_ratio)
-    crop_h = crop_height_for(width, height, frame_ratio)
-    top = int(round((height - crop_h) * max(0.0, min(1.0, offset))))
-    cropped = img.crop((0, top, width, top + crop_h))
-    return frame_image(cropped, border, border_color_of(config))
+    axis, crop_w, crop_h = crop_box_for(width, height, frame_ratio)
+    border = border_px_for(crop_w, frame_ratio)
+    offset = max(0.0, min(1.0, offset))
+    if axis == "y":
+        top = int(round((height - crop_h) * offset))
+        box = (0, top, width, top + crop_h)
+    else:
+        left = int(round((width - crop_w) * offset))
+        box = (left, 0, left + crop_w, height)
+    return frame_image(img.crop(box), border, border_color_of(config))
 
 
 def add_signature_to_image(
@@ -527,44 +565,11 @@ def create_portrait_with_landscape_blur_fill(
     )
 
 
-def iter_split_2_3_to_3_4(
-    img: Image.Image, config: dict, only: Optional[Collection[str]] = None
-) -> Iterator[Tuple[str, Image.Image]]:
-    """Génère (kind, image) pour un paysage 2/3 : deux moitiés encadrées (panorama)
-    puis les deux versions portrait 3/4 de la photo entière."""
-    width, height = img.size
+def _iter_full_portraits(img: Image.Image, config: dict, wanted) -> Iterator[Tuple[str, Image.Image]]:
+    """Les deux versions « photo entière » en portrait 3/4 d'un paysage : droite (`part1_with_sig`) et pivotée
+    (`part2_with_sig`)."""
     frame_ratio = frame_ratio_of(config)
     color = border_color_of(config)
-    target_width = width // 2
-    # Border thickness is based on the crop's own width (the short side),
-    # same basis as every other 3/4 output in the app (frame_ratio * short
-    # side) so the frame reads the same thickness everywhere.
-    border_px = border_px_for(target_width, frame_ratio)
-    # The frame is added asymmetrically (left/top/bottom only, nothing on the
-    # shared inner edge) so the pair reassembles without a double border in the
-    # middle. That means the border itself skews the ratio: it adds border_px
-    # once to the width but twice to the height. Solve for the crop height so
-    # that, once that border is added, the final image lands on exactly 3/4 —
-    # otherwise Instagram re-crops it and the border ends up uneven.
-    target_height = int(round((4 * target_width - 2 * border_px) / 3))
-
-    if target_height > height:
-        raise ValueError(
-            f"Taille impossible : hauteur {height}px insuffisante pour deux portraits 3/4 de largeur {target_width}px"
-        )
-
-    crop_top = (height - target_height) // 2
-    left_crop = img.crop((0, crop_top, target_width, crop_top + target_height))
-    right_crop = img.crop((target_width, crop_top, width, crop_top + target_height))
-    wanted = set(OPTIONAL_KINDS) if only is None else set(only)
-    # apply frame on three sides: top, bottom and outer vertical edge only
-    if "part1" in wanted:
-        yield "part1", frame_image_with_outer_edge(left_crop, border_px, "left", color)
-    if "part2" in wanted:
-        yield "part2", frame_image_with_outer_edge(right_crop, border_px, "right", color)
-    if not wanted & {"part1_with_sig", "part2_with_sig"}:
-        return
-
     sig_path = config.get("signature_path")
     sig_path = Path(sig_path) if sig_path else None
     position = signature_position_of(config)
@@ -607,19 +612,106 @@ def iter_split_2_3_to_3_4(
             )
 
 
-def kinds_for_ratio(ratio_type: Optional[str], config: dict) -> List[str]:
-    """Types de sorties produites pour un ratio donné (sans rien calculer), hors types désactivés."""
+def iter_split_2_3_to_3_4(
+    img: Image.Image, config: dict, only: Optional[Collection[str]] = None
+) -> Iterator[Tuple[str, Image.Image]]:
+    """Génère (kind, image) pour un paysage 2/3 : deux moitiés encadrées (panorama)
+    puis les deux versions portrait 3/4 de la photo entière."""
+    width, height = img.size
+    frame_ratio = frame_ratio_of(config)
+    color = border_color_of(config)
+    target_width = width // 2
+    # Border thickness is based on the crop's own width (the short side),
+    # same basis as every other 3/4 output in the app (frame_ratio * short
+    # side) so the frame reads the same thickness everywhere.
+    border_px = border_px_for(target_width, frame_ratio)
+    # The frame is added asymmetrically (left/top/bottom only, nothing on the
+    # shared inner edge) so the pair reassembles without a double border in the
+    # middle. That means the border itself skews the ratio: it adds border_px
+    # once to the width but twice to the height. Solve for the crop height so
+    # that, once that border is added, the final image lands on exactly 3/4 —
+    # otherwise Instagram re-crops it and the border ends up uneven.
+    target_height = int(round((4 * target_width - 2 * border_px) / 3))
+
+    if target_height > height:
+        raise ValueError(
+            f"Taille impossible : hauteur {height}px insuffisante pour deux portraits 3/4 de largeur {target_width}px"
+        )
+
+    crop_top = (height - target_height) // 2
+    left_crop = img.crop((0, crop_top, target_width, crop_top + target_height))
+    right_crop = img.crop((target_width, crop_top, width, crop_top + target_height))
+    wanted = set(OPTIONAL_KINDS) if only is None else set(only)
+    # apply frame on three sides: top, bottom and outer vertical edge only
+    if "part1" in wanted:
+        yield "part1", frame_image_with_outer_edge(left_crop, border_px, "left", color)
+    if "part2" in wanted:
+        yield "part2", frame_image_with_outer_edge(right_crop, border_px, "right", color)
+    if not wanted & {"part1_with_sig", "part2_with_sig"}:
+        return
+    yield from _iter_full_portraits(img, config, wanted)
+
+
+def iter_landscape_other(
+    img: Image.Image, config: dict, parts: int, only: Optional[Collection[str]] = None
+) -> Iterator[Tuple[str, Image.Image]]:
+    """Paysage de format quelconque : `parts` tranches contiguës encadrées (le cadre n'entoure que le haut, le
+    bas et les deux extrémités, pour que le panorama se recompose sans double bordure), toutes en 3/4 une fois
+    encadrées, puis les deux versions « photo entière »."""
+    width, height = img.size
+    frame_ratio = frame_ratio_of(config)
+    color = border_color_of(config)
+    border = border_px_for(width // parts, frame_ratio)
+    frame_w = (width + 2 * border) / parts                 # largeur finale de chaque image (extrémités : contenu - bordure)
+    content_h = int(round(frame_w * 4 / 3 - 2 * border))
+    if content_h > height:
+        raise ValueError(f"Taille impossible : hauteur {height}px insuffisante pour {parts} portraits 3/4")
+    top = (height - content_h) // 2
+    edges = [0] + [int(round(i * frame_w - border)) for i in range(1, parts)] + [width]
+    wanted = set(only) if only is not None else {f"part{i}" for i in range(1, parts + 1)} | set(OPTIONAL_KINDS)
+    for index in range(parts):
+        kind = f"part{index + 1}"
+        if kind not in wanted:
+            continue
+        piece = img.crop((edges[index], top, edges[index + 1], top + content_h))
+        if index == 0:
+            yield kind, frame_image_with_outer_edge(piece, border, "left", color)
+        elif index == parts - 1:
+            yield kind, frame_image_with_outer_edge(piece, border, "right", color)
+        else:
+            yield kind, ImageOps.expand(piece.convert("RGB") if piece.mode not in ("RGB", "RGBA") else piece,
+                                        border=(0, border, 0, border), fill=color)
+    if wanted & {"part1_with_sig", "part2_with_sig"}:
+        yield from _iter_full_portraits(img, config, wanted)
+
+
+def _main_kind(config: dict) -> str:
+    return "with_sig" if config.get("signature_path") else "framed"
+
+
+def kinds_for_ratio(ratio_type: Optional[str], config: dict, size: Optional[Tuple[int, int]] = None) -> List[str]:
+    """Types de sorties produites pour un ratio donné (sans rien calculer), hors types désactivés.
+    `size` (largeur, hauteur) sert à compter les tranches d'un panorama."""
+    disabled = disabled_kinds_of(config)
+    crop = [] if KIND_CROP in disabled else [KIND_CROP]
     if ratio_type == "portrait_3_4":
         return ["framed"]
-    if ratio_type == "portrait_2_3":
-        kinds = ["with_sig" if config.get("signature_path") else "framed"]
-        if KIND_CROP not in disabled_kinds_of(config):
-            kinds.append(KIND_CROP)
-        return kinds
+    if ratio_type in ("portrait_2_3", "portrait_other", "square"):
+        return [_main_kind(config)] + crop
     if ratio_type == "landscape_2_3":
-        disabled = disabled_kinds_of(config)
         return [kind for kind in OPTIONAL_KINDS if kind not in disabled]
+    if ratio_type == "landscape_other":
+        parts = panorama_parts(*size) if size else 2
+        slices = [f"part{i}" for i in range(1, parts + 1)]
+        # « part1 » règle la première tranche, « part2 » toutes les suivantes
+        slices = [k for k in slices if k not in disabled and not (int(k[4:]) >= 2 and "part2" in disabled)]
+        full = [k for k in ("part1_with_sig", "part2_with_sig") if k not in disabled]
+        return slices + full + crop
     return []
+
+
+def kinds_for_size(width: int, height: int, config: dict) -> List[str]:
+    return kinds_for_ratio(detect_ratio_type(width, height), config, (width, height))
 
 
 def iter_outputs(
@@ -631,23 +723,30 @@ def iter_outputs(
     """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque.
     `only` limite aux types demandés (les autres ne sont pas calculés) ; par défaut, tous les types actifs."""
     ratio_type = detect_ratio_type(*img.size)
-    wanted = [k for k in kinds_for_ratio(ratio_type, config) if only is None or k in only]
+    wanted = [k for k in kinds_for_ratio(ratio_type, config, img.size) if only is None or k in only]
     if not wanted:
         return
     if ratio_type == "portrait_3_4":
         yield "framed", render_portrait_3_4(img, config)
-    elif ratio_type == "portrait_2_3":
+    elif ratio_type in ("portrait_2_3", "portrait_other", "square"):
         for kind in wanted:
             if kind == KIND_CROP:
                 yield kind, render_crop_3_4(img, config, crop_offset)
             else:
                 yield kind, render_portrait_2_3(img, config)
     elif ratio_type == "landscape_2_3":
-        yield from iter_split_2_3_to_3_4(img, config, only=wanted)
+        yield from iter_split_2_3_to_3_4(img, config, only=[k for k in wanted if k != KIND_CROP])
+    elif ratio_type == "landscape_other":
+        parts = panorama_parts(*img.size)
+        mine = [k for k in wanted if k != KIND_CROP]
+        if mine:
+            yield from iter_landscape_other(img, config, parts, only=mine)
+        if KIND_CROP in wanted:
+            yield KIND_CROP, render_crop_3_4(img, config, crop_offset)
 
 
-def peek_ratio_type(path: Path) -> Optional[str]:
-    """Détecte le type de ratio en ne lisant que l'en-tête de l'image (orientation EXIF comprise)."""
+def peek_size(path: Path) -> Tuple[int, int]:
+    """Dimensions affichées (orientation EXIF comprise), en ne lisant que l'en-tête de l'image."""
     with Image.open(path) as img:
         width, height = img.size
         try:
@@ -656,7 +755,12 @@ def peek_ratio_type(path: Path) -> Optional[str]:
             orientation = 1
     if orientation in (5, 6, 7, 8):
         width, height = height, width
-    return detect_ratio_type(width, height)
+    return width, height
+
+
+def peek_ratio_type(path: Path) -> Optional[str]:
+    """Type de format de l'image (voir detect_ratio_type), sans la décoder."""
+    return detect_ratio_type(*peek_size(path))
 
 
 def item_key(source: Path, kind: str) -> str:
@@ -672,11 +776,12 @@ def planned_items(files: Sequence[Path], config: dict) -> List[Tuple[Path, str]]
     items: List[Tuple[Path, str]] = []
     for path in files:
         try:
-            ratio_type = peek_ratio_type(path)
+            width, height = peek_size(path)
+            kinds = kinds_for_size(width, height, config)
         except Exception:
             logger.exception("Lecture impossible : %s", path)
             continue
-        for kind in kinds_for_ratio(ratio_type, config):
+        for kind in kinds:
             items.append((path, kind))
     return items
 
@@ -752,7 +857,10 @@ def process_image(
     labels = {
         "portrait_3_4": "portrait 3/4",
         "portrait_2_3": "portrait 2/3",
-        "landscape_2_3": "paysage 2/3",
+        "landscape_2_3": "paysage 3/2",
+        "portrait_other": "portrait (autre format)",
+        "square": "format carré ou proche",
+        "landscape_other": "paysage (autre format)",
     }
     if ratio_type is None:
         say(f"⚠️ Ignoré : ratio non supporté pour {input_path.name} ({width}x{height})")
@@ -761,7 +869,7 @@ def process_image(
 
     quality = jpeg_quality_of(config)
     output_files: List[Path] = []
-    wanted = [k for k in kinds_for_ratio(ratio_type, config) if item_key(input_path, k) not in (excluded or ())]
+    wanted = [k for k in kinds_for_size(width, height, config) if item_key(input_path, k) not in (excluded or ())]
     for kind, out_img in iter_outputs(img, config, only=wanted, crop_offset=crop_offset_for(config, input_path)):
         prefix = (prefixes or {}).get(item_key(input_path, kind), "")
         out_path = output_dir / output_name(input_path, kind, prefix)
