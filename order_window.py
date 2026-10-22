@@ -290,7 +290,10 @@ class OrderWindow(tk.Toplevel):
         ImageViewer(self, tile.source, tile.kind, self.config_snapshot, dark=self.dark)
 
     def _on_double_click(self, event) -> None:
-        index = self._tile_at(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+        index = self._tile_at(x, y)
+        if self._click_cross(index, x, y):  # deux clics rapides sur la croix : pas de visionneuse
+            return
         if index is not None:
             self.select(index)
             self.view_selected()
@@ -332,6 +335,11 @@ class OrderWindow(tk.Toplevel):
         height = self.GAP + rows * (self.TILE_H + self.GAP)
         canvas.configure(scrollregion=(0, 0, COLUMNS * self.TILE_W + (COLUMNS + 1) * self.GAP, max(height, 1)))
 
+    def _cross_rect(self, x: int, y: int) -> Tuple[int, int, int, int]:
+        """Zone cliquable de la croix (exclure / réintégrer), en haut à droite d'une tuile."""
+        d, m = int(28 * self.scale), int(8 * self.scale)
+        return x + self.TILE_W - m - d, y + m, x + self.TILE_W - m, y + m + d
+
     def _draw_tile(self, tile: Tile, index: int, x: int, y: int, number: int) -> None:
         canvas = self.canvas
         dragging = self.drag is not None and self.drag.get("moved") and self.drag["index"] == index
@@ -366,6 +374,12 @@ class OrderWindow(tk.Toplevel):
             x + m + d // 2, y + m + d // 2, text="–" if tile.excluded else str(number), fill="#ffffff",
             font=("Segoe UI", 10, "bold"),
         )
+        x0, y0, x1, y1 = self._cross_rect(x, y)
+        canvas.create_oval(x0, y0, x1, y1, fill="#2e7d32" if tile.excluded else "#222222", outline="#ffffff", width=2)
+        canvas.create_text(
+            (x0 + x1) // 2, (y0 + y1) // 2, text="↺" if tile.excluded else "✕", fill="#ffffff",
+            font=("Segoe UI", 11, "bold"),
+        )
         if index == self.selected:
             canvas.create_rectangle(
                 x + 2, y + 2, x + self.TILE_W - 2, y + self.TILE_H - 2, outline="#0095f6", width=max(3, int(4 * s))
@@ -392,9 +406,23 @@ class OrderWindow(tk.Toplevel):
         row = max(0, int((y - self.GAP) // (self.TILE_H + self.GAP)))
         return min(len(self.tiles) - 1, row * COLUMNS + col)
 
+    def _click_cross(self, index: Optional[int], x: float, y: float) -> bool:
+        """Si le clic tombe sur la croix d'une tuile, l'exclut / la réintègre et renvoie True."""
+        if index is None:
+            return False
+        cx0, cy0, cx1, cy1 = self._cross_rect(*self._slot_origin(index))
+        if cx0 <= x <= cx1 and cy0 <= y <= cy1:
+            self.select(index)
+            self.toggle_exclude()
+            return True
+        return False
+
     def _on_press(self, event) -> None:
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         index = self._tile_at(x, y)
+        if self._click_cross(index, x, y):
+            self.drag = None
+            return
         self.drag = None if index is None else {"index": index, "x0": event.x, "y0": event.y, "moved": False}
 
     def _on_motion(self, event) -> None:

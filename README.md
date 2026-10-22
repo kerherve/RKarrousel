@@ -1,4 +1,4 @@
-# Photo Splitter LR → Instagram
+# RKarrousel
 
 Prépare des photos exportées de Lightroom pour Instagram : cadre blanc, découpe des paysages 2/3 en
 deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichiers selon l'ordre voulu.
@@ -14,7 +14,7 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 
 ## Utiliser l'appli (Windows)
 
-Téléchargez `PhotoSplitter.exe` depuis les *Releases* du dépôt, puis lancez-le.
+Téléchargez `RKarrousel.exe` depuis les *Releases* du dépôt, puis lancez-le.
 
 - **Fichiers** : ajoutez des fichiers ou des dossiers (ou glissez-déposez-les), choisissez le dossier de destination.
 - **Réglages** : épaisseur et couleur du cadre, fond uni (couleur au choix) ou flouté et intensité du flou, signature (position, taille),
@@ -42,11 +42,11 @@ python -m unittest discover -s tests
 
 ## Compiler l'exécutable
 
-`build_windows.bat` (Windows, Python installé) produit `dist\PhotoSplitter.exe`.
+`build_windows.bat` (Windows, Python installé) produit `dist\RKarrousel.exe`.
 Depuis WSL : voir `.claude/skills/imagesplitter-release/SKILL.md`.
 
 ## Publier une version
 
 Le numéro de version est dans `version.py` (affiché dans le titre de la fenêtre et dans « À propos »).
 Pousser un tag `vX.Y.Z` déclenche le workflow GitHub Actions `release.yml` qui exécute les tests, compile
-l'exécutable Windows et l'ajoute à la release sous le nom `PhotoSplitter-vX.Y.Z.exe`.
+l'exécutable Windows et l'ajoute à la release sous le nom `RKarrousel-vX.Y.Z.exe`.
