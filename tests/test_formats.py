@@ -1,6 +1,5 @@
 """Classification des formats de photo et géométrie des formats de sortie."""
 import unittest
-from pathlib import Path
 
 from rkarrousel import formats, outputs as produce
 
