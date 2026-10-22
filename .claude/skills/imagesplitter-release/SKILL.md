@@ -28,11 +28,14 @@ built from the tagged commit. Never reuse an old `dist/PhotoSplitter.exe`.
    `/mnt/c/Users/riwal/Photos/imageSplitter/dist/` as TWO files, overwriting the old ones:
    `PhotoSplitter.exe` (stable name, used by the shortcut) and `PhotoSplitter-vX.Y.Z.exe` (versioned copy).
    Leave `.image_splitter_config.json` in that folder untouched (it holds the user's preferences).
+   The copy over `PhotoSplitter.exe` fails with "Permission denied" if the app is running: ask the user to close it first,
+   retry, then check with `cmp` that both files are identical.
 5. Push the tag: `git push origin vX.Y.Z`.
 6. Publish a GitHub release with the exe attached (`gh` lives in `~/.local/bin`, add it to PATH):
    first `cp dist/PhotoSplitter.exe dist/PhotoSplitter-vX.Y.Z.exe` so the asset name carries the version, then
    `gh release create vX.Y.Z dist/PhotoSplitter-vX.Y.Z.exe --title "vX.Y.Z" --notes "<changelog from git log since previous tag>"`
-7. Confirm the release page lists `PhotoSplitter-vX.Y.Z.exe`.
+7. Confirm the release page lists `PhotoSplitter-vX.Y.Z.exe` (`gh release view vX.Y.Z --json assets`).
+8. Ask the user to launch the app and check that the window title shows `vX.Y.Z` and that the "À propos" button shows the same version.
 
 ## Notes
 - Repo: https://github.com/kerherve/imageSplitter (private). Default branch: `master`.
