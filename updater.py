@@ -61,36 +61,24 @@ class ReleaseInfo:
     tag: str
     notes: str
     asset_name: str
-    asset_api_url: str
-    asset_public_url: str
+    asset_url: str
     size: int
     digest: Optional[str]
     page_url: str
 
 
 # ---------------------------------------------------------------------- GitHub
-def _headers(token: Optional[str], accept: str) -> dict:
-    headers = {"Accept": accept, "User-Agent": USER_AGENT, "X-GitHub-Api-Version": "2022-11-28"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
-def fetch_latest_release(
-    repo: str = REPO, token: Optional[str] = None, api: str = API_URL, timeout: float = 20
-) -> ReleaseInfo:
+def fetch_latest_release(repo: str = REPO, api: str = API_URL, timeout: float = 20) -> ReleaseInfo:
     """Dernière release publiée (hors brouillons et pré-versions) avec son exécutable portable."""
     url = f"{api}/repos/{repo}/releases/latest"
-    request = urllib.request.Request(url, headers=_headers(token, "application/vnd.github+json"))
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT, "X-GitHub-Api-Version": "2022-11-28"}
+    request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            hint = "dépôt privé ou aucune release" if not token else "aucune release (ou jeton sans accès au dépôt)"
-            raise UpdateError(f"Release introuvable ({hint}).", "not_found") from exc
-        if exc.code == 401:
-            raise UpdateError("Jeton GitHub refusé.", "unauthorized") from exc
+            raise UpdateError("Aucune release trouvée.", "not_found") from exc
         if exc.code in (403, 429):
             raise UpdateError("Limite de requêtes GitHub atteinte, réessayez plus tard.", "rate_limit") from exc
         raise UpdateError(f"GitHub a répondu {exc.code}.", "http") from exc
@@ -109,8 +97,7 @@ def fetch_latest_release(
                 tag=tag,
                 notes=str(data.get("body") or "").strip(),
                 asset_name=asset["name"],
-                asset_api_url=str(asset.get("url", "")),
-                asset_public_url=str(asset.get("browser_download_url", "")),
+                asset_url=str(asset.get("browser_download_url", "")),
                 size=int(asset.get("size") or 0),
                 digest=asset.get("digest"),
                 page_url=str(data.get("html_url", "")),
@@ -118,34 +105,9 @@ def fetch_latest_release(
     raise UpdateError(f"La release {tag} ne contient pas d'exécutable portable.", "no_asset")
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
-def _open_asset(info: ReleaseInfo, token: Optional[str], timeout: float):
-    """Ouvre le téléchargement. Dépôt privé : l'API répond par une redirection vers un lien signé, qu'il faut
-    suivre SANS l'en-tête Authorization (sinon le stockage refuse la requête)."""
-    if not token:
-        return urllib.request.urlopen(
-            urllib.request.Request(info.asset_public_url, headers={"User-Agent": USER_AGENT}), timeout=timeout
-        )
-    request = urllib.request.Request(info.asset_api_url, headers=_headers(token, "application/octet-stream"))
-    opener = urllib.request.build_opener(_NoRedirect)
-    try:
-        return opener.open(request, timeout=timeout)
-    except urllib.error.HTTPError as exc:
-        if exc.code in (301, 302, 303, 307, 308) and exc.headers.get("Location"):
-            return urllib.request.urlopen(
-                urllib.request.Request(exc.headers["Location"], headers={"User-Agent": USER_AGENT}), timeout=timeout
-            )
-        raise
-
-
 def download(
     info: ReleaseInfo,
     dest: Path,
-    token: Optional[str] = None,
     progress: Optional[Callable[[int, int], None]] = None,
     cancel: Optional[threading.Event] = None,
     timeout: float = 60,
@@ -155,7 +117,8 @@ def download(
     part = dest.with_name(dest.name + ".part")
     sha = hashlib.sha256()
     try:
-        with _open_asset(info, token, timeout) as response, open(part, "wb") as out:
+        request = urllib.request.Request(info.asset_url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=timeout) as response, open(part, "wb") as out:
             total = int(response.headers.get("Content-Length") or info.size or 0)
             done = 0
             while True:
@@ -269,7 +232,6 @@ def cleanup_leftovers(current: Path) -> None:
 def perform_update(
     info: ReleaseInfo,
     current: Path,
-    token: Optional[str] = None,
     progress: Optional[Callable[[int, int], None]] = None,
     cancel: Optional[threading.Event] = None,
     status: Optional[Callable[[str], None]] = None,
@@ -281,7 +243,7 @@ def perform_update(
     new = new_path(current)
     note = status or (lambda _: None)
     note("downloading")
-    download(info, new, token, progress, cancel)
+    download(info, new, progress, cancel)
     note("verifying")
     if not verify(new):
         new.unlink(missing_ok=True)

@@ -95,7 +95,8 @@ class RenderTests(unittest.TestCase):
         exif = Image.Exif()
         exif[0x0112] = 6  # ...mais à afficher en portrait
         img.save(src, exif=exif)
-        self.assertEqual(utils.peek_ratio_type(src), "portrait_3_4")
+        self.assertEqual(utils.peek_size(src), (1200, 1600))  # l'orientation EXIF échange largeur et hauteur
+        self.assertEqual(utils.detect_ratio_type(*utils.peek_size(src)), "portrait_3_4")
 
 
 class OrderingTests(unittest.TestCase):

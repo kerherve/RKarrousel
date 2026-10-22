@@ -166,7 +166,6 @@ class PhotoSplitterGUI:
         self.gdrive_cancel = threading.Event()
         self.batch_config: dict = {}
         self.update_check = tk.BooleanVar(value=bool(cfg.get("update_check", True)))
-        self.github_token = tk.StringVar(value=cfg.get("github_token", ""))
         self.update_dialog: Optional[UpdateDialog] = None
         self.update_cancel = threading.Event()
         self.status_text = tk.StringVar(value="")
@@ -398,17 +397,20 @@ class PhotoSplitterGUI:
         bg_row.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
         self.bg_swatch = tk.Label(bg_row, width=4, relief=tk.SOLID, borderwidth=1)
         self.bg_swatch.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Entry(bg_row, textvariable=self.background_color, width=10).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(bg_row, text=t("choose_color"), command=self.choose_background_color).pack(side=tk.LEFT)
+        self.bg_entry = ttk.Entry(bg_row, textvariable=self.background_color, width=10)
+        self.bg_entry.pack(side=tk.LEFT, padx=(0, 8))
+        self.bg_button = ttk.Button(bg_row, text=t("choose_color"), command=self.choose_background_color)
+        self.bg_button.pack(side=tk.LEFT)
         self.background_color.trace_add("write", lambda *_: self.update_color_swatch())
         self.update_color_swatch()
         ttk.Label(fill_group, text=t("blur_strength")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
         blur_row = ttk.Frame(fill_group)
         blur_row.grid(row=2, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
-        ttk.Spinbox(blur_row, from_=0.2, to=5.0, increment=0.1, textvariable=self.blur_strength, width=6).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
+        self.blur_spin = ttk.Spinbox(blur_row, from_=0.2, to=5.0, increment=0.1, textvariable=self.blur_strength, width=6)
+        self.blur_spin.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
+        self.landscape_fill_mode.trace_add("write", lambda *_: self.update_fill_widgets())
+        self.update_fill_widgets()
 
         sig_group = ttk.LabelFrame(tab, text=t("signature_group"), padding=12)
         sig_group.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
@@ -445,7 +447,7 @@ class PhotoSplitterGUI:
         ttk.Label(output_group, text=t("output_format")).grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
         format_keys = list(OUTPUT_FORMATS)
         format_box = ttk.Combobox(
-            output_group, state="readonly", width=24, values=[t(f"fmt_{key.replace(':', 'x')}") for key in format_keys]
+            output_group, state="readonly", width=34, values=[t(f"fmt_{key.replace(':', 'x')}") for key in format_keys]
         )
         current_format = self.output_format.get()
         format_box.current(format_keys.index(current_format) if current_format in format_keys else 0)
@@ -454,7 +456,7 @@ class PhotoSplitterGUI:
 
         ttk.Label(output_group, text=t("output_width")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
         width_box = ttk.Combobox(
-            output_group, state="readonly", width=24,
+            output_group, state="readonly", width=34,
             values=[t("width_original") if w == 0 else t("width_px", px=w) for w in OUTPUT_WIDTHS],
         )
         current_width = self.output_width.get()
@@ -507,13 +509,6 @@ class PhotoSplitterGUI:
         ttk.Button(update_group, text=t("upd_check_now"), command=lambda: self.check_updates(manual=True)).grid(
             row=1, column=1, sticky=tk.W, padx=(12, 0), pady=(10, 0)
         )
-        ttk.Label(update_group, text=t("upd_token")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
-        ttk.Entry(update_group, textvariable=self.github_token, show="•").grid(
-            row=2, column=1, columnspan=2, sticky=tk.EW, padx=(12, 0), pady=(10, 0)
-        )
-        ttk.Label(update_group, text=t("upd_token_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(
-            row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0)
-        )
 
     # ------------------------------------------------------------------ glisser-déposer
     def setup_drop_target(self):
@@ -554,13 +549,12 @@ class PhotoSplitterGUI:
             self.check_updates(manual=False)
 
     def check_updates(self, manual: bool = False):
-        token = self.github_token.get().strip() or None
         if manual:
             self.set_status(t("upd_checking"))
 
         def work():
             try:
-                info = updater.fetch_latest_release(UPDATE_REPO, token, UPDATE_API)
+                info = updater.fetch_latest_release(UPDATE_REPO, UPDATE_API)
                 self.events.put(("upd_check", info, None, manual))
             except updater.UpdateError as exc:
                 self.events.put(("upd_check", None, exc, manual))
@@ -577,9 +571,7 @@ class PhotoSplitterGUI:
             logger.info("Recherche de mise à jour : %s", error)
             if manual:
                 self.set_status(t("status_ready"))
-                no_token = not self.github_token.get().strip()
-                message = t("upd_private") if error.code == "not_found" and no_token else t("upd_error", message=error)
-                messagebox.showerror(t("upd_group"), message)
+                messagebox.showerror(t("upd_group"), t("upd_error", message=error))
             return
         if updater.is_newer(info.version, __version__):
             if manual or info.version != self.config.get("skipped_version"):
@@ -614,7 +606,6 @@ class PhotoSplitterGUI:
         dialog = self.update_dialog
         dialog.set_busy(True)
         self.update_cancel = threading.Event()
-        token = self.github_token.get().strip() or None
         current = Path(sys.executable)
 
         def work():
@@ -622,7 +613,6 @@ class PhotoSplitterGUI:
                 updater.perform_update(
                     info,
                     current,
-                    token,
                     progress=lambda done, total: self.events.put(("upd_progress", done, total)),
                     cancel=self.update_cancel,
                     status=lambda step: self.events.put(("upd_status", step)),
@@ -881,6 +871,13 @@ class PhotoSplitterGUI:
         for widget in (self.frame_spin, self.frame_color_entry, self.frame_color_btn):
             widget.state(state)
 
+    def update_fill_widgets(self):
+        """La couleur ne sert qu'au fond uni et l'intensité qu'au fond flouté : on grise l'autre."""
+        solid = self.landscape_fill_mode.get() != "blur"
+        for widget in (self.bg_entry, self.bg_button):
+            widget.state(["!disabled"] if solid else ["disabled"])
+        self.blur_spin.state(["disabled"] if solid else ["!disabled"])
+
     def choose_background_color(self):
         rgb = parse_color(self.background_color.get(), (0, 0, 0))
         picked = colorchooser.askcolor(color="#%02x%02x%02x" % rgb, title=t("bg_color"))
@@ -975,7 +972,7 @@ class PhotoSplitterGUI:
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
         cfg["update_check"] = bool(self.update_check.get())
-        cfg["github_token"] = self.github_token.get().strip()
+        cfg.pop("github_token", None)  # ancien réglage supprimé : on n'en garde aucune trace dans la config
         cfg["gdrive_enabled"] = bool(self.gdrive_enabled.get())
         cfg["gdrive_folder"] = self.gdrive_folder.get().strip() or "RKarrousel"
         cfg["language"] = i18n.get_language()
@@ -1205,16 +1202,14 @@ def run_self_update(log_path: Optional[Path]) -> int:
     if not FROZEN:
         log("error: --self-update only works with the packaged executable")
         return 2
-    config = load_config(CONFIG_PATH)
-    token = (config.get("github_token") or "").strip() or None
     try:
-        info = updater.fetch_latest_release(UPDATE_REPO, token, UPDATE_API)
+        info = updater.fetch_latest_release(UPDATE_REPO, UPDATE_API)
         log(f"latest={info.version} current={__version__}")
         if not updater.is_newer(info.version, __version__):
             log("up-to-date")
             return 0
         current = Path(sys.executable)
-        updater.perform_update(info, current, token, status=log)
+        updater.perform_update(info, current, status=log)
         log("relaunching")
         updater.relaunch(current)
         return 0

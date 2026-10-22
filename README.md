@@ -57,9 +57,6 @@ taille et son empreinte SHA-256, **vérifie que la nouvelle version démarre**, 
 (l'ancienne est supprimée au démarrage suivant) et se relance. Rien n'est modifié si une étape échoue. Le raccourci et les
 réglages (fichier à côté de l'exécutable) ne bougent pas. Le bouton « Rechercher maintenant » force la vérification.
 
-Si le dépôt GitHub est **privé**, la recherche anonyme ne voit aucune release : renseignez un jeton GitHub (accès en
-lecture au contenu du dépôt) dans Réglages → Mises à jour, ou rendez le dépôt public.
-
 ## Envoi sur Google Drive (optionnel)
 
 Dans **Réglages → Google Drive**, cochez « Envoyer les images sur Google Drive après le traitement » : les images

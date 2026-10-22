@@ -17,11 +17,10 @@ EXE_BYTES = b"MZ" + b"\x00" * 5000
 
 
 class FakeGitHub(http.server.ThreadingHTTPServer):
-    def __init__(self, tag="v9.9.9", payload=EXE_BYTES, private=False, with_digest=True, setup_only=False):
+    def __init__(self, tag="v9.9.9", payload=EXE_BYTES, with_digest=True, setup_only=False):
         super().__init__(("127.0.0.1", 0), FakeGitHubHandler)
-        self.tag, self.payload, self.private = tag, payload, private
+        self.tag, self.payload = tag, payload
         self.with_digest, self.setup_only = with_digest, setup_only
-        self.blob_got_authorization = None
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -46,21 +45,15 @@ class FakeGitHubHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _authorized(self):
-        return not self.server.private or self.headers.get("Authorization") == "Bearer SECRET"
-
     def do_GET(self):
         s = self.server
         version = s.tag.lstrip("v")
         if self.path == "/repos/o/r/releases/latest":
-            if not self._authorized():
-                return self._send(404, b'{"message": "Not Found"}')
-            assets = [{"name": f"RKarrousel-Setup-v{version}.exe", "url": f"{s.base}/assets/1", "browser_download_url": f"{s.base}/download/setup", "size": 10}]
+            assets = [{"name": f"RKarrousel-Setup-v{version}.exe", "browser_download_url": f"{s.base}/download/setup", "size": 10}]
             if not s.setup_only:
                 asset = {
                     "name": f"RKarrousel-v{version}.exe",
-                    "url": f"{s.base}/assets/2",
-                    "browser_download_url": f"{s.base}/download/portable",
+                                        "browser_download_url": f"{s.base}/download/portable",
                     "size": len(s.payload),
                 }
                 if s.with_digest:
@@ -68,15 +61,6 @@ class FakeGitHubHandler(http.server.BaseHTTPRequestHandler):
                 assets.append(asset)
             body = {"tag_name": s.tag, "body": "- nouveautés", "html_url": f"{s.base}/release", "assets": assets}
             return self._send(200, json.dumps(body).encode(), {"Content-Type": "application/json"})
-        if self.path == "/assets/2":  # API d'asset (dépôt privé) : redirection vers un lien signé
-            if not self._authorized() or "octet-stream" not in (self.headers.get("Accept") or ""):
-                return self._send(404)
-            return self._send(302, b"", {"Location": f"{s.base}/blob/signed"})
-        if self.path == "/blob/signed":
-            s.blob_got_authorization = self.headers.get("Authorization")
-            if s.blob_got_authorization:  # le stockage refuse une requête qui porte un jeton
-                return self._send(400, b"auth header not allowed")
-            return self._send(200, s.payload)
         if self.path == "/download/portable":
             return self._send(200, s.payload)
         self._send(404)
@@ -119,13 +103,6 @@ class GitHubTests(unittest.TestCase):
             self.fetch()
         self.assertEqual(ctx.exception.code, "no_asset")
 
-    def test_private_repo_needs_a_token(self):
-        self.fake = FakeGitHub(private=True)
-        with self.assertRaises(updater.UpdateError) as ctx:
-            self.fetch()
-        self.assertEqual(ctx.exception.code, "not_found")
-        self.assertEqual(self.fetch(token="SECRET").version, "9.9.9")
-
     def test_network_error(self):
         self.fake = FakeGitHub()
         with self.assertRaises(updater.UpdateError) as ctx:
@@ -150,13 +127,6 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(), EXE_BYTES)
         self.assertEqual(seen[-1][0], len(EXE_BYTES))
         self.assertFalse((self.dir / "new.exe.part").exists())
-
-    def test_private_download_follows_the_redirect_without_the_token(self):
-        self.fake = FakeGitHub(private=True)
-        info = updater.fetch_latest_release("o/r", token="SECRET", api=self.fake.base)
-        target = updater.download(info, self.dir / "new.exe", token="SECRET")
-        self.assertEqual(target.read_bytes(), EXE_BYTES)
-        self.assertIsNone(self.fake.blob_got_authorization)
 
     def test_corrupted_download_is_rejected(self):
         self.fake = FakeGitHub()

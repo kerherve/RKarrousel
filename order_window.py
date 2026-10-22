@@ -19,7 +19,6 @@ from utils import KIND_CROP, crop_offset_for, item_key, output_format_of, merge_
 
 COLUMNS = 3
 BASE_TILE_W = 210
-BASE_TILE_H = 280  # 3:4, comme la grille de profil Instagram
 BASE_GAP = 4
 PREVIEW_SOURCE_SIDE = 1600  # la source est réduite avant rendu : cadre et flou sont relatifs, le rendu reste fidèle
 DRAG_THRESHOLD = 6

@@ -224,11 +224,6 @@ def crop_box_for(
     return "x", max(1, min(width, crop_w)), height
 
 
-def crop_height_for(width: int, height: int, frame_ratio: float, target: Tuple[int, int] = DEFAULT_TARGET) -> int:
-    """Hauteur de la zone conservée (voir crop_box_for)."""
-    return crop_box_for(width, height, frame_ratio, target)[2]
-
-
 def blur_strength_of(config: dict) -> float:
     return _number(config, "blur_strength", DEFAULT_BLUR_STRENGTH, 0.2, 5.0)
 
@@ -812,11 +807,6 @@ def peek_size(path: Path) -> Tuple[int, int]:
     if orientation in (5, 6, 7, 8):
         width, height = height, width
     return width, height
-
-
-def peek_ratio_type(path: Path) -> Optional[str]:
-    """Type de format de l'image (voir detect_ratio_type), sans la décoder."""
-    return detect_ratio_type(*peek_size(path))
 
 
 def item_key(source: Path, kind: str) -> str:

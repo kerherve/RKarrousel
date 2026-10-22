@@ -24,7 +24,7 @@ The local build below is still needed to install the exe on the user's machine a
 ## Auto-update contract (do not break)
 The app updates itself from the latest GitHub release: `updater.py` looks for an asset named exactly
 `RKarrousel-vX.Y.Z.exe` (portable exe, X.Y.Z = tag without `v`) and replaces the running exe in place (config untouched).
-So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is public, so the updater needs no token (a token field exists in Settings for private forks). A real self-update can be tested with two exes built from
+So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is public, so the updater needs no token (token support was removed). A real self-update can be tested with two exes built from
 different `version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKARROUSEL_UPDATE_REPO` env vars) and
 `RKarrousel.exe --self-update log.txt`. NEVER stop test processes by name on the user's machine (see memory).
 
