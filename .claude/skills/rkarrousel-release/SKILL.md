@@ -1,9 +1,9 @@
 ---
-name: imagesplitter-release
-description: Release workflow for imageSplitter. Use when tagging a new version, cutting a release, or publishing RKarrousel.exe. Every release MUST ship a freshly built Windows .exe.
+name: rkarrousel-release
+description: Release workflow for RKarrousel. Use when tagging a new version, cutting a release, or publishing RKarrousel.exe. Every release MUST ship a freshly built Windows .exe.
 ---
 
-# imageSplitter release
+# RKarrousel release
 
 Every new release (git tag `vX.Y.Z`) requires a freshly built `RKarrousel.exe`
 built from the tagged commit. Never reuse an old `dist/RKarrousel.exe`.
@@ -24,8 +24,7 @@ The local build below is still needed to install the exe on the user's machine a
 ## Auto-update contract (do not break)
 The app updates itself from the latest GitHub release: `updater.py` looks for an asset named exactly
 `RKarrousel-vX.Y.Z.exe` (portable exe, X.Y.Z = tag without `v`) and replaces the running exe in place (config untouched).
-So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is private: the updater
-needs a GitHub token in Settings, or the repo must be public. A real self-update can be tested with two exes built from
+So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is public, so the updater needs no token (a token field exists in Settings for private forks). A real self-update can be tested with two exes built from
 different `version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKARROUSEL_UPDATE_REPO` env vars) and
 `RKarrousel.exe --self-update log.txt`. NEVER stop test processes by name on the user's machine (see memory).
 
@@ -60,7 +59,7 @@ different `version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKA
 8. Ask the user to launch the app and check that the window title shows `vX.Y.Z` and that the "À propos" button shows the same version.
 
 ## Notes
-- Repo: https://github.com/kerherve/imageSplitter (private). Default branch: `master`.
+- Repo: https://github.com/kerherve/RKarrousel (public since v0.8.0; renamed from imageSplitter, GitHub redirects the old URLs). Default branch: `master`.
 - `build/`, `dist/` and `*.spec` are build artefacts, not committed.
 - Local installer build (optional, Inno Setup 6 is installed per-user at `%LOCALAPPDATA%\Programs\Inno Setup 6`): copy `installer/` and `dist/RKarrousel.exe`
   to a Windows temp dir, then run `ISCC.exe /DAppVersion=X.Y.Z RKarrousel.iss` from a `.bat` (cmd quoting breaks otherwise).

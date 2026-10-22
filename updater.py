@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
-REPO = "kerherve/imageSplitter"
+REPO = "kerherve/RKarrousel"
 API_URL = "https://api.github.com"
 ASSET_RE = re.compile(r"^RKarrousel-v(\d+\.\d+\.\d+)\.exe$")  # l'exécutable portable (pas l'installateur)
 USER_AGENT = "RKarrousel-updater"
