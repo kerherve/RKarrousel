@@ -216,7 +216,10 @@ def crop_box_for(
     tw, th = target
     if width * th <= height * tw:
         border = border_px_for(width, frame_ratio)
-        return "y", width, min(height, int(round((th * width + 2 * border * (th - tw)) / tw)))
+        crop_h = int(round((th * width + 2 * border * (th - tw)) / tw))
+        if crop_h <= height:
+            return "y", width, crop_h
+        # image à peine plus étroite que le format : le cadre ne tient pas en rognant la hauteur, on rogne la largeur
     crop_w = int(round((tw * height / th) / (1 + 2 * max(0.0, frame_ratio) * (1 - tw / th))))
     return "x", max(1, min(width, crop_w)), height
 
@@ -333,8 +336,17 @@ def save_image(img: Image.Image, output_path: Path, quality: int = DEFAULT_JPEG_
 
 
 def render_portrait_3_4(img: Image.Image, config: dict) -> Image.Image:
-    border_px = border_px_for(min(img.size), frame_ratio_of(config))
-    return frame_image(img, border_px, border_color_of(config))
+    """Image déjà au format de sortie (±3 %). Encadrée telle quelle, elle n'aurait plus tout à fait le bon format
+    (le cadre s'ajoute sur les quatre côtés) et Instagram rognerait le cadre de façon inégale : on la rogne donc
+    d'une fraction de pour cent, au centre, pour que l'image encadrée ait EXACTEMENT le format de sortie."""
+    frame_ratio = frame_ratio_of(config)
+    width, height = img.size
+    if frame_ratio <= 0:
+        return frame_image(img, 0, border_color_of(config))
+    axis, crop_w, crop_h = crop_box_for(width, height, frame_ratio, output_format_of(config))
+    left, top = (width - crop_w) // 2, (height - crop_h) // 2
+    cropped = img.crop((left, top, left + crop_w, top + crop_h))
+    return frame_image(cropped, border_px_for(crop_w, frame_ratio), border_color_of(config))
 
 
 def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:

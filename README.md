@@ -7,7 +7,7 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 
 | Photo source | Images produites |
 |---|---|
-| Portrait 3/4 | `_framed` : la photo encadrée |
+| Portrait 3/4 (ou déjà au format de sortie) | `_framed` : la photo encadrée, rognée de moins de 1 % (au centre) pour que l'image cadre comprise ait **exactement** le format de sortie, sans quoi Instagram rognerait le cadre de façon inégale |
 | Portrait 2/3 ou autre portrait (4:5, 9:16…), carré, quasi carré (5:4) | `_with_sig` (ou `_framed` sans signature) : la photo entière sur un canvas 3/4, fond uni ou flouté ; `_crop34` : recadrage 3/4 (cadre blanc, sans signature) dont vous réglez la zone conservée |
 | Paysage 3:2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
 | Autre paysage (4:3, 16:9, panorama…) | `_part1` … `_partN` : le panorama découpé en N tranches 3/4 contiguës (N calculé, 10 au maximum) ; la photo entière droite et pivotée ; `_crop34` |

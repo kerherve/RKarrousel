@@ -55,12 +55,13 @@ class RenderTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_framed_portrait_is_larger_by_twice_the_border(self):
+    def test_framed_portrait_is_exactly_3_4_once_framed(self):
+        # un 3:4 d'origine est rogné de moins de 1 % pour que, cadre compris, l'image soit exactement en 3:4
         src = make_image(self.dir, "p.jpg", (600, 800))
         (kind, img), = utils.render_outputs(src, {"frame_ratio": 0.05})
-        border = round(600 * 0.05)
         self.assertEqual(kind, "framed")
-        self.assertEqual(img.size, (600 + 2 * border, 800 + 2 * border))
+        self.assertAlmostEqual(img.width / img.height, 3 / 4, delta=0.002)
+        self.assertLess(abs(img.width - (600 + 2 * 30)), 20)  # ~ la taille d'origine plus le cadre
 
     def test_border_color_is_applied(self):
         src = make_image(self.dir, "p.jpg", (300, 400))
@@ -238,7 +239,8 @@ class ExclusionAndColorTests(unittest.TestCase):
     def test_measure_border(self):
         src = make_image(self.dir, "p.jpg", (600, 800))
         img = utils.render_output(src, {"frame_ratio": 0.05, "border_color": "#FFFFFF"}, "framed")
-        self.assertEqual(utils.measure_border(img, (255, 255, 255)), round(600 * 0.05))
+        _, crop_w, _ = utils.crop_box_for(600, 800, 0.05)
+        self.assertEqual(utils.measure_border(img, (255, 255, 255)), utils.border_px_for(crop_w, 0.05))
 
 
     def test_measure_border_skips_a_solid_background(self):
@@ -366,8 +368,6 @@ class OutputFormatTests(unittest.TestCase):
     def test_every_output_matches_the_chosen_format(self):
         for fmt, (tw, th) in utils.OUTPUT_FORMATS.items():
             for size in self.SOURCES:
-                if utils.detect_ratio_type(*size, (tw, th)) == "portrait_3_4":
-                    continue  # déjà au format : simplement encadrée, comme avant
                 src = make_image(self.dir, f"{size[0]}x{size[1]}_{fmt[0]}.jpg", size)
                 for mode in ("black", "blur"):
                     config = {"output_format": fmt, "frame_ratio": 0.03, "landscape_fill_mode": mode}
@@ -375,6 +375,27 @@ class OutputFormatTests(unittest.TestCase):
                     self.assertTrue(outputs, (fmt, size))
                     for kind, img in outputs:
                         self.assertAlmostEqual(img.width / img.height, tw / th, delta=0.005, msg=f"{fmt} {size} {kind} {mode}")
+
+    def test_photo_already_at_the_format_is_exact_once_framed(self):
+        for fmt, (tw, th) in utils.OUTPUT_FORMATS.items():
+            goal = tw / th
+            for deviation in (-0.02, 0.0, 0.02):
+                width = 1200
+                src = make_image(self.dir, f"m_{fmt[0]}_{deviation}.jpg", (width, round(width / (goal * (1 + deviation)))))
+                for frame in (0.01, 0.02, 0.05):
+                    img = utils.render_output(src, {"output_format": fmt, "frame_ratio": frame}, "framed")
+                    self.assertAlmostEqual(img.width / img.height, goal, delta=0.002, msg=f"{fmt} {deviation} {frame}")
+                    self.assertGreater(utils.measure_border(img, (255, 255, 255)), 0)
+
+    def test_matching_photo_is_untouched_without_frame(self):
+        src = make_image(self.dir, "m.jpg", (600, 800))
+        img = utils.render_output(src, {"frame_enabled": False}, "framed")
+        self.assertEqual(img.size, (600, 800))
+
+    def test_crop_box_falls_back_to_the_width_when_the_height_cannot_hold_the_frame(self):
+        axis, crop_w, crop_h = utils.crop_box_for(1000, 1340, 0.05)  # à peine plus étroit que 3:4
+        self.assertEqual((axis, crop_h), ("x", 1340))
+        self.assertLess(crop_w, 1000)
 
     def test_width_gives_exact_instagram_dimensions(self):
         expected = {"3:4": (1080, 1440), "4:5": (1080, 1350), "1:1": (1080, 1080), "9:16": (1080, 1920)}
