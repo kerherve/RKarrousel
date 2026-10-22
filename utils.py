@@ -38,6 +38,11 @@ KIND_CROP = "crop34"  # recadrage 3/4 (portrait 2/3, autres portraits, carrés, 
 SQUARE_MIN_RATIO = 0.95   # en dessous : portrait « autre » ; entre les deux : quasi carré
 LANDSCAPE_MIN_RATIO = 1.3  # au-dessus : paysage « autre » (découpé en panorama)
 MAX_PANORAMA_PARTS = 10    # un carrousel Instagram ne dépasse pas 10 images
+OUTPUT_FORMATS = {"3:4": (3, 4), "4:5": (4, 5), "1:1": (1, 1), "9:16": (9, 16)}  # grille, feed, carré, stories
+DEFAULT_OUTPUT_FORMAT = "3:4"
+DEFAULT_TARGET = (3, 4)
+OUTPUT_WIDTHS = (0, 1080, 1440, 2048)  # 0 = taille d'origine
+WIDE_FACTOR = 1.7333  # au-delà de format × WIDE_FACTOR, un paysage est découpé en panorama (0,75 × 1,733 = 1,3)
 DEFAULT_CROP_OFFSET = 0.5
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
@@ -158,6 +163,24 @@ def disabled_kinds_of(config: dict) -> set:
     return {str(kind) for kind in value} if isinstance(value, (list, tuple, set)) else set()
 
 
+def output_format_of(config: dict) -> Tuple[int, int]:
+    """Format des images produites, (largeur, hauteur) : 3:4 par défaut."""
+    return OUTPUT_FORMATS.get(str(config.get("output_format", DEFAULT_OUTPUT_FORMAT)), DEFAULT_TARGET)
+
+
+def output_width_of(config: dict) -> int:
+    """Largeur maximale des images produites en pixels ; 0 = taille d'origine."""
+    try:
+        value = int(config.get("output_width", 0))
+    except (TypeError, ValueError):
+        return 0
+    return value if 200 <= value <= 20000 else 0
+
+
+def format_tag(target: Tuple[int, int]) -> str:
+    return f"{target[0]}{target[1]}"
+
+
 def frame_ratio_of(config: dict) -> float:
     """Épaisseur du cadre en fraction du plus petit côté ; 0 si l'utilisateur ne veut pas de cadre."""
     if config.get("frame_enabled", True) is False:
@@ -183,21 +206,24 @@ def crop_offset_for(config: dict, path) -> float:
     return max(0.0, min(1.0, value))
 
 
-def crop_box_for(width: int, height: int, frame_ratio: float) -> Tuple[str, int, int]:
-    """Zone conservée d'un recadrage 3/4 : (axe libre, largeur, hauteur), de sorte que l'image, une fois
-    encadrée, soit exactement en 3/4. Plus étroite que le 3/4 : toute la largeur est gardée et on règle la
-    position verticale (axe « y »). Sinon : toute la hauteur est gardée et on règle la position horizontale
-    (axe « x »). Le cadre suit la règle des autres sorties : frame_ratio × plus petit côté."""
-    if width * 4 <= height * 3:
+def crop_box_for(
+    width: int, height: int, frame_ratio: float, target: Tuple[int, int] = DEFAULT_TARGET
+) -> Tuple[str, int, int]:
+    """Zone conservée d'un recadrage au format de sortie : (axe libre, largeur, hauteur), de sorte que l'image,
+    une fois encadrée, ait exactement ce format. Plus étroite que le format : toute la largeur est gardée et on
+    règle la position verticale (axe « y »). Sinon : toute la hauteur est gardée et on règle la position
+    horizontale (axe « x »). Le cadre suit la règle des autres sorties : frame_ratio × plus petit côté."""
+    tw, th = target
+    if width * th <= height * tw:
         border = border_px_for(width, frame_ratio)
-        return "y", width, min(height, int(round((4 * width + 2 * border) / 3)))
-    crop_w = int(round(0.75 * height / (1 + 0.5 * max(0.0, frame_ratio))))
+        return "y", width, min(height, int(round((th * width + 2 * border * (th - tw)) / tw)))
+    crop_w = int(round((tw * height / th) / (1 + 2 * max(0.0, frame_ratio) * (1 - tw / th))))
     return "x", max(1, min(width, crop_w)), height
 
 
-def crop_height_for(width: int, height: int, frame_ratio: float) -> int:
+def crop_height_for(width: int, height: int, frame_ratio: float, target: Tuple[int, int] = DEFAULT_TARGET) -> int:
     """Hauteur de la zone conservée (voir crop_box_for)."""
-    return crop_box_for(width, height, frame_ratio)[2]
+    return crop_box_for(width, height, frame_ratio, target)[2]
 
 
 def blur_strength_of(config: dict) -> float:
@@ -221,14 +247,20 @@ def is_supported_image(path: Path) -> bool:
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
-def detect_ratio_type(width: int, height: int) -> Optional[str]:
-    """Classe une image selon son format. Les trois formats historiques (±3 %) gardent leur traitement ;
-    tous les autres sont pris en charge : portrait « autre », quasi carré, paysage « autre »."""
+def detect_ratio_type(width: int, height: int, target: Tuple[int, int] = DEFAULT_TARGET) -> Optional[str]:
+    """Classe une image selon son format. « portrait_3_4 » désigne une image déjà au format de sortie (±3 %).
+    En 3:4, les formats 2:3 et 3:2 gardent leur traitement historique ; tous les autres sont pris en charge :
+    portrait « autre », quasi carré, paysage « autre » (panorama)."""
     if width <= 0 or height <= 0:
         return None
     ratio = width / height
-    if abs(ratio - 3 / 4) / (3 / 4) <= RATIO_TOLERANCE:
+    goal = target[0] / target[1]
+    if abs(ratio - goal) / goal <= RATIO_TOLERANCE:
         return "portrait_3_4"
+    if target != DEFAULT_TARGET:
+        if ratio < goal:
+            return "portrait_other"
+        return "square" if ratio <= goal * WIDE_FACTOR else "landscape_other"
     if abs(ratio - 2 / 3) / (2 / 3) <= RATIO_TOLERANCE:
         return "portrait_2_3"
     if abs(ratio - 3 / 2) / (3 / 2) <= RATIO_TOLERANCE:
@@ -240,10 +272,11 @@ def detect_ratio_type(width: int, height: int) -> Optional[str]:
     return "landscape_other"
 
 
-def panorama_parts(width: int, height: int) -> int:
-    """Nombre d'images 3/4 dans lesquelles découper un paysage : le plus petit N dont chaque tranche
-    (largeur/N) peut devenir un 3/4 en rognant seulement le haut et le bas."""
-    parts = max(2, int(math.ceil(4 * (width / height) / 3 - 0.01)))
+def panorama_parts(width: int, height: int, target: Tuple[int, int] = DEFAULT_TARGET) -> int:
+    """Nombre d'images dans lesquelles découper un paysage : le plus petit N dont chaque tranche
+    (largeur/N) peut prendre le format de sortie en rognant seulement le haut et le bas."""
+    tw, th = target
+    parts = max(2, int(math.ceil(th * (width / height) / tw - 0.01)))
     if parts > MAX_PANORAMA_PARTS:
         raise ValueError(
             f"Format trop panoramique ({width}x{height}) : il faudrait {parts} images, le maximum est {MAX_PANORAMA_PARTS}."
@@ -320,6 +353,7 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
             blur_strength=blur_strength_of(config),
             sig_position=position,
             sig_scale=sig_scale,
+            target=output_format_of(config),
         )
 
     signed = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
@@ -331,13 +365,14 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     min_width = framed.width
     min_height = framed.height
 
-    # Place the framed 2/3 portrait onto a 3/4 portrait canvas
-    if min_width * 4 >= min_height * 3:
+    # Place the framed photo onto a canvas of the output format (3/4 by default)
+    tw, th = output_format_of(config)
+    if min_width * th >= min_height * tw:
         portrait_width = min_width
-        portrait_height = int(round(portrait_width * 4 / 3))
+        portrait_height = int(round(portrait_width * th / tw))
     else:
         portrait_height = min_height
-        portrait_width = int(round(portrait_height * 3 / 4))
+        portrait_width = int(round(portrait_height * tw / th))
 
     # Keep the final canvas at least as large as the framed image
     portrait_width = max(portrait_width, min_width)
@@ -351,14 +386,14 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
 
 
 def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP_OFFSET) -> Image.Image:
-    """Recadre n'importe quelle image en 3/4 (position `offset` de 0 à 1 le long de l'axe libre) puis l'encadre :
+    """Recadre n'importe quelle image au format de sortie (3/4 par défaut) (position `offset` de 0 à 1 le long de l'axe libre) puis l'encadre :
     le résultat est un portrait 3/4 prêt pour Instagram. Pas de signature : seules les photos portrait d'origine
     sont signées, pas les images redimensionnées."""
     if img.mode != "RGB":
         img = img.convert("RGB")
     frame_ratio = frame_ratio_of(config)
     width, height = img.size
-    axis, crop_w, crop_h = crop_box_for(width, height, frame_ratio)
+    axis, crop_w, crop_h = crop_box_for(width, height, frame_ratio, output_format_of(config))
     border = border_px_for(crop_w, frame_ratio)
     offset = max(0.0, min(1.0, offset))
     if axis == "y":
@@ -444,9 +479,10 @@ def create_portrait_with_landscape_content(
     sig_position: str = DEFAULT_SIGNATURE_POSITION,
     sig_scale: float = DEFAULT_SIGNATURE_SCALE,
     background_color=DEFAULT_BACKGROUND_COLOR,
+    target: Tuple[int, int] = DEFAULT_TARGET,
 ) -> Image.Image:
     """
-    Crée une image portrait 3/4 avec l'image paysage complète centrée, signée, encadrée et placée sur fond uni (noir par défaut).
+    Crée une image au format de sortie (3/4 par défaut) avec l'image paysage complète centrée, signée, encadrée et placée sur fond uni (noir par défaut).
     """
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -457,9 +493,10 @@ def create_portrait_with_landscape_content(
     src_w, src_h = signed.size
     border_px = border_px_for(min(src_w, src_h), frame_ratio)
 
-    # determine 3/4 portrait size to fit the source image plus frame
-    portrait_width = max(src_w + 2 * border_px, int(round((src_h + 2 * border_px) * 3 / 4)))
-    portrait_height = int(round(portrait_width * 4 / 3))
+    # determine the canvas size (output format) to fit the source image plus frame
+    tw, th = target
+    portrait_width = max(src_w + 2 * border_px, int(round((src_h + 2 * border_px) * tw / th)))
+    portrait_height = int(round(portrait_width * th / tw))
 
     inner_w = portrait_width - 2 * border_px
     inner_h = portrait_height - 2 * border_px
@@ -492,9 +529,10 @@ def create_portrait_with_landscape_blur_fill(
     blur_strength: float = DEFAULT_BLUR_STRENGTH,
     sig_position: str = DEFAULT_SIGNATURE_POSITION,
     sig_scale: float = DEFAULT_SIGNATURE_SCALE,
+    target: Tuple[int, int] = DEFAULT_TARGET,
 ) -> Image.Image:
     """
-    Crée une image portrait 3/4 avec la photo nette étendue jusqu'aux bords (largeur
+    Crée une image au format de sortie (3/4 par défaut) avec la photo nette étendue jusqu'aux bords (largeur
     pleine si la photo est large, hauteur pleine si elle est étroite/pivotée), le reste
     comblé par une version agrandie et floutée de la même photo, puis encadre l'ensemble
     du canevas (comme les portraits 3/4 classiques). La signature est apposée en dernier,
@@ -515,13 +553,15 @@ def create_portrait_with_landscape_blur_fill(
     # split_2_3_to_3_4) -- so the content size is solved to pre-compensate for
     # that border and land on exactly 3/4 once framed, matching the other 3/4
     # outputs pixel-for-pixel in proportion.
-    target_ratio = 3 / 4
+    tw, th = target
+    target_ratio = tw / th
+    extra = th + 2 * frame_ratio * (th - tw)  # pré-compense le cadre : (largeur+2b)/(hauteur+2b) = tw/th
     if src_w / src_h >= target_ratio:
         content_width = src_w
-        content_height = max(int(round(content_width * (4 + 2 * frame_ratio) / 3)), src_h)
+        content_height = max(int(round(content_width * extra / tw)), src_h)
     else:
         content_height = src_h
-        content_width = max(int(round(content_height * 3 / (4 + 2 * frame_ratio))), src_w)
+        content_width = max(int(round(content_height * tw / extra)), src_w)
 
     # Cover-fit the (unsigned) photo over the content canvas, then blur it.
     scale = max(content_width / img.width, content_height / img.height)
@@ -578,16 +618,18 @@ def _iter_full_portraits(img: Image.Image, config: dict, wanted) -> Iterator[Tup
 
     blur = blur_strength_of(config)
     bg = background_color_of(config)
+    target = output_format_of(config)
 
     if "part1_with_sig" in wanted:
         if fill_mode == "blur":
             yield "part1_with_sig", create_portrait_with_landscape_blur_fill(
-                img, sig_path, frame_ratio=frame_ratio, border_color=color, blur_strength=blur, sig_scale=sig_scale
+                img, sig_path, frame_ratio=frame_ratio, border_color=color, blur_strength=blur, sig_scale=sig_scale,
+                target=target,
             )
         else:
             yield "part1_with_sig", create_portrait_with_landscape_content(
                 img, sig_path, frame_ratio=frame_ratio, border_color=color, sig_position=position,
-                sig_scale=sig_scale, background_color=bg,
+                sig_scale=sig_scale, background_color=bg, target=target,
             )
 
     if "part2_with_sig" in wanted:
@@ -601,6 +643,7 @@ def _iter_full_portraits(img: Image.Image, config: dict, wanted) -> Iterator[Tup
                 border_color=color,
                 blur_strength=blur,
                 sig_scale=sig_scale,
+                target=target,
             )
         else:
             # Sign the upright photo first, then rotate the signed result as one block
@@ -608,7 +651,7 @@ def _iter_full_portraits(img: Image.Image, config: dict, wanted) -> Iterator[Tup
             signed_for_rotation = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
             img_rotated = signed_for_rotation.transpose(Image.Transpose.ROTATE_270)
             yield "part2_with_sig", create_portrait_with_landscape_content(
-                img_rotated, None, frame_ratio=frame_ratio, border_color=color, background_color=bg
+                img_rotated, None, frame_ratio=frame_ratio, border_color=color, background_color=bg, target=target
             )
 
 
@@ -663,9 +706,10 @@ def iter_landscape_other(
     color = border_color_of(config)
     border = border_px_for(width // parts, frame_ratio)
     frame_w = (width + 2 * border) / parts                 # largeur finale de chaque image (extrémités : contenu - bordure)
-    content_h = int(round(frame_w * 4 / 3 - 2 * border))
+    tw, th = output_format_of(config)
+    content_h = int(round(frame_w * th / tw - 2 * border))
     if content_h > height:
-        raise ValueError(f"Taille impossible : hauteur {height}px insuffisante pour {parts} portraits 3/4")
+        raise ValueError(f"Taille impossible : hauteur {height}px insuffisante pour {parts} images {tw}:{th}")
     top = (height - content_h) // 2
     edges = [0] + [int(round(i * frame_w - border)) for i in range(1, parts)] + [width]
     wanted = set(only) if only is not None else {f"part{i}" for i in range(1, parts + 1)} | set(OPTIONAL_KINDS)
@@ -701,7 +745,7 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict, size: Optional[Tupl
     if ratio_type == "landscape_2_3":
         return [kind for kind in OPTIONAL_KINDS if kind not in disabled]
     if ratio_type == "landscape_other":
-        parts = panorama_parts(*size) if size else 2
+        parts = panorama_parts(*size, output_format_of(config)) if size else 2
         slices = [f"part{i}" for i in range(1, parts + 1)]
         # « part1 » règle la première tranche, « part2 » toutes les suivantes
         slices = [k for k in slices if k not in disabled and not (int(k[4:]) >= 2 and "part2" in disabled)]
@@ -711,7 +755,7 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict, size: Optional[Tupl
 
 
 def kinds_for_size(width: int, height: int, config: dict) -> List[str]:
-    return kinds_for_ratio(detect_ratio_type(width, height), config, (width, height))
+    return kinds_for_ratio(detect_ratio_type(width, height, output_format_of(config)), config, (width, height))
 
 
 def iter_outputs(
@@ -722,7 +766,7 @@ def iter_outputs(
 ) -> Iterator[Tuple[str, Image.Image]]:
     """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque.
     `only` limite aux types demandés (les autres ne sont pas calculés) ; par défaut, tous les types actifs."""
-    ratio_type = detect_ratio_type(*img.size)
+    ratio_type = detect_ratio_type(*img.size, output_format_of(config))
     wanted = [k for k in kinds_for_ratio(ratio_type, config, img.size) if only is None or k in only]
     if not wanted:
         return
@@ -737,7 +781,7 @@ def iter_outputs(
     elif ratio_type == "landscape_2_3":
         yield from iter_split_2_3_to_3_4(img, config, only=[k for k in wanted if k != KIND_CROP])
     elif ratio_type == "landscape_other":
-        parts = panorama_parts(*img.size)
+        parts = panorama_parts(*img.size, output_format_of(config))
         mine = [k for k in wanted if k != KIND_CROP]
         if mine:
             yield from iter_landscape_other(img, config, parts, only=mine)
@@ -767,8 +811,25 @@ def item_key(source: Path, kind: str) -> str:
     return f"{source}|{kind}"
 
 
-def output_name(source: Path, kind: str, prefix: str = "") -> str:
-    return f"{prefix}{source.stem}_{kind}{source.suffix or '.jpg'}"
+def output_name(source: Path, kind: str, prefix: str = "", config: Optional[dict] = None) -> str:
+    suffix = kind
+    if kind == KIND_CROP and config is not None:
+        suffix = f"crop{format_tag(output_format_of(config))}"  # crop34 en 3:4, crop45 en 4:5…
+    return f"{prefix}{source.stem}_{suffix}{source.suffix or '.jpg'}"
+
+
+def finalize_size(img: Image.Image, config: dict) -> Image.Image:
+    """Réduit l'image à la largeur de sortie choisie (jamais d'agrandissement). Une image au format de sortie
+    (à 0,5 % près) reçoit des dimensions exactes, par exemple 1080×1440 en 3:4."""
+    width = output_width_of(config)
+    if not width or img.width <= width:
+        return img
+    tw, th = output_format_of(config)
+    height = int(round(img.height * width / img.width))
+    exact = width * th / tw
+    if abs(height - exact) <= max(2.0, exact * 0.005):
+        height = int(round(exact))
+    return img.resize((width, height), Image.Resampling.LANCZOS)
 
 
 def planned_items(files: Sequence[Path], config: dict) -> List[Tuple[Path, str]]:
@@ -817,7 +878,7 @@ def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] =
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     for found, out in iter_outputs(img, config, only={kind}, crop_offset=crop_offset_for(config, path)):
         if found == kind:
-            return out
+            return finalize_size(out, config) if not max_side else out
     return None
 
 
@@ -853,7 +914,7 @@ def process_image(
 ) -> List[Path]:
     img = open_image(input_path)
     width, height = img.size
-    ratio_type = detect_ratio_type(width, height)
+    ratio_type = detect_ratio_type(width, height, output_format_of(config))
     labels = {
         "portrait_3_4": "portrait 3/4",
         "portrait_2_3": "portrait 2/3",
@@ -872,8 +933,8 @@ def process_image(
     wanted = [k for k in kinds_for_size(width, height, config) if item_key(input_path, k) not in (excluded or ())]
     for kind, out_img in iter_outputs(img, config, only=wanted, crop_offset=crop_offset_for(config, input_path)):
         prefix = (prefixes or {}).get(item_key(input_path, kind), "")
-        out_path = output_dir / output_name(input_path, kind, prefix)
-        save_image(out_img, out_path, quality)
+        out_path = output_dir / output_name(input_path, kind, prefix, config)
+        save_image(finalize_size(out_img, config), out_path, quality)
         output_files.append(out_path)
     return output_files
 

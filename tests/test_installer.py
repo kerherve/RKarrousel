@@ -10,7 +10,7 @@ import utils
 
 KNOWN_KEYS = {
     "language", "theme", "frame_enabled", "frame_ratio", "border_color", "landscape_fill_mode", "background_color",
-    "blur_strength", "jpeg_quality", "number_files", "signature_position", "signature_scale",
+    "blur_strength", "jpeg_quality", "output_format", "output_width", "number_files", "signature_position", "signature_scale",
     "disabled_kinds", "last_dest_dir", "gdrive_enabled", "gdrive_folder",
 }
 
@@ -41,6 +41,8 @@ class InstallerDefaultsTests(unittest.TestCase):
         self.assertEqual(utils.signature_scale_of(config), config["signature_scale"])
         self.assertEqual(utils.disabled_kinds_of(config), set())
         self.assertIn(config["theme"], ("auto", "light", "dark"))
+        self.assertIn(config["output_format"], utils.OUTPUT_FORMATS)
+        self.assertIn(config["output_width"], utils.OUTPUT_WIDTHS)
 
     def test_app_loads_the_default_config(self):
         import tempfile

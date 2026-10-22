@@ -343,6 +343,86 @@ class AnyFormatTests(unittest.TestCase):
         self.assertTrue(all(n[:2].isdigit() for n in names))
 
 
+class OutputFormatTests(unittest.TestCase):
+    SOURCES = ((1000, 1000), (800, 1000), (900, 1600), (1000, 1500), (1500, 1000), (1200, 900), (1600, 900), (3000, 1000))
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_format_and_width_helpers(self):
+        self.assertEqual(utils.output_format_of({}), (3, 4))
+        self.assertEqual(utils.output_format_of({"output_format": "4:5"}), (4, 5))
+        self.assertEqual(utils.output_format_of({"output_format": "9:16"}), (9, 16))
+        self.assertEqual(utils.output_format_of({"output_format": "nonsense"}), (3, 4))
+        self.assertEqual(utils.output_width_of({"output_width": 1080}), 1080)
+        self.assertEqual(utils.output_width_of({"output_width": "x"}), 0)
+        self.assertEqual(utils.output_width_of({"output_width": 50}), 0)
+        self.assertEqual(utils.format_tag((9, 16)), "916")
+
+    def test_every_output_matches_the_chosen_format(self):
+        for fmt, (tw, th) in utils.OUTPUT_FORMATS.items():
+            for size in self.SOURCES:
+                if utils.detect_ratio_type(*size, (tw, th)) == "portrait_3_4":
+                    continue  # déjà au format : simplement encadrée, comme avant
+                src = make_image(self.dir, f"{size[0]}x{size[1]}_{fmt[0]}.jpg", size)
+                for mode in ("black", "blur"):
+                    config = {"output_format": fmt, "frame_ratio": 0.03, "landscape_fill_mode": mode}
+                    outputs = utils.render_outputs(src, config)
+                    self.assertTrue(outputs, (fmt, size))
+                    for kind, img in outputs:
+                        self.assertAlmostEqual(img.width / img.height, tw / th, delta=0.005, msg=f"{fmt} {size} {kind} {mode}")
+
+    def test_width_gives_exact_instagram_dimensions(self):
+        expected = {"3:4": (1080, 1440), "4:5": (1080, 1350), "1:1": (1080, 1080), "9:16": (1080, 1920)}
+        for fmt, dims in expected.items():
+            for size in ((2400, 3600), (4000, 3000), (7200, 2400)):
+                src = make_image(self.dir, f"{size[0]}x{size[1]}_{fmt[0]}.jpg", size)
+                config = {"output_format": fmt, "output_width": 1080, "frame_ratio": 0.02}
+                widths = []
+                for kind in utils.kinds_for_size(*size, config):
+                    img = utils.render_output(src, config, kind)
+                    widths.append(img.width)
+                    self.assertLessEqual(img.width, 1080)  # jamais d'agrandissement
+                    if img.width == 1080:
+                        self.assertEqual(img.size, dims, f"{fmt} {size} {kind}")
+                self.assertIn(1080, widths, f"{fmt} {size}")  # au moins une image atteint la largeur demandée
+
+    def test_never_upscales_and_leaves_matching_photos_undistorted(self):
+        small = make_image(self.dir, "small.jpg", (600, 800))
+        img = utils.render_output(small, {"output_width": 1080, "frame_enabled": False}, "framed")
+        self.assertEqual(img.size, (600, 800))
+        odd = Image.new("RGB", (2000, 2800))  # 0,714 : proche du 3:4 mais pas exact
+        self.assertEqual(utils.finalize_size(odd, {"output_width": 1000}).size, (1000, 1400))
+
+    def test_crop_file_suffix_follows_the_format(self):
+        src = self.dir / "p.jpg"
+        self.assertEqual(utils.output_name(src, "crop34", "", {}), "p_crop34.jpg")
+        self.assertEqual(utils.output_name(src, "crop34", "", {"output_format": "4:5"}), "p_crop45.jpg")
+        self.assertEqual(utils.output_name(src, "framed", "01_", {"output_format": "1:1"}), "01_p_framed.jpg")
+
+    def test_panorama_parts_depend_on_the_format(self):
+        self.assertEqual(utils.panorama_parts(3000, 1000, (3, 4)), 4)
+        self.assertEqual(utils.panorama_parts(3000, 1000, (4, 5)), 4)
+        self.assertEqual(utils.panorama_parts(3000, 1000, (1, 1)), 3)
+        self.assertEqual(utils.panorama_parts(3000, 1000, (9, 16)), 6)
+
+    def test_a_3_2_photo_uses_the_generic_panorama_in_other_formats(self):
+        kinds = utils.kinds_for_size(1500, 1000, {"output_format": "4:5"})
+        self.assertEqual(kinds, ["part1", "part2", "part1_with_sig", "part2_with_sig", "crop34"])
+
+    def test_batch_writes_sized_files_with_the_format_suffix(self):
+        src = make_image(self.dir, "p23.jpg", (2000, 3000))
+        config = {"output_format": "4:5", "output_width": 1080, "frame_ratio": 0.02}
+        (result,) = utils.process_batch([src], self.dir / "out", config, number_files=True)
+        self.assertEqual(sorted(p.name for p in result.outputs), ["01_p23_framed.jpg", "02_p23_crop45.jpg"])
+        for path in result.outputs:
+            self.assertEqual(Image.open(path).size, (1080, 1350))
+
+
 class NoFrameTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

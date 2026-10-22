@@ -25,7 +25,8 @@ class I18nTests(unittest.TestCase):
         used = set()
         for name in ("photo_splitter_gui.py", "order_window.py", "image_viewer.py", "crop_editor.py", "update_dialog.py"):
             used |= set(re.findall(r"\bt\(\s*[\"']([\w-]+)[\"']", (ROOT / name).read_text(encoding="utf-8")))
-        used |= {"set_kind_part1", "set_kind_part2", "kind_part_n"}
+        used |= {"set_kind_part1", "set_kind_part2", "kind_part_n", "width_original", "width_px"}
+        used |= {f"fmt_{k}" for k in ("3x4", "4x5", "1x1", "9x16")}
         used |= {f"upd_{step}" for step in ("downloading", "verifying", "installing")}
         used |= {f"pos_{p}" for p in ("bottom-right", "bottom-center", "bottom-left")}
         used |= {f"kind_{k}" for k in ("framed", "with_sig", "part1", "part2", "part1_with_sig", "part2_with_sig", "crop34")}

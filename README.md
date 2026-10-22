@@ -12,7 +12,12 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 | Paysage 3:2 | `_part1`, `_part2` : deux moitiés encadrées (panorama) ; `_part1_with_sig`, `_part2_with_sig` : la photo entière en portrait 3/4, droite puis pivotée |
 | Autre paysage (4:3, 16:9, panorama…) | `_part1` … `_partN` : le panorama découpé en N tranches 3/4 contiguës (N calculé, 10 au maximum) ; la photo entière droite et pivotée ; `_crop34` |
 
-**Tous les formats sont acceptés.** Le recadrage 3/4 se règle verticalement pour une photo plus étroite que le 3/4, et
+**Format et taille de sortie.** Par défaut les images sortent en 3:4 (grille Instagram) à la taille d'origine. Dans
+Réglages → Fichiers générés, choisissez le format (**3:4** grille, **4:5** feed, **1:1** carré, **9:16** stories/reels :
+découpage, recadrage et fonds s'adaptent) et la largeur (**1080 px** = taille idéale pour Instagram, fichiers bien plus
+légers ; jamais d'agrandissement). Les fichiers de recadrage portent le format dans leur nom (`_crop34`, `_crop45`…).
+
+**Tous les formats de photo sont acceptés.** Le recadrage se règle verticalement pour une photo plus étroite que le 3/4, et
 horizontalement pour une photo plus large. Chaque type d'image se décoche dans les Réglages ou s'exclut photo par photo.
 
 ## Utiliser l'appli (Windows)

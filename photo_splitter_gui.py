@@ -35,6 +35,8 @@ from utils import (
     KIND_CROP,
     LOG_PATH,
     OPTIONAL_KINDS,
+    OUTPUT_FORMATS,
+    OUTPUT_WIDTHS,
     SIGNATURE_POSITIONS,
     FileResult,
     gather_input_files,
@@ -153,6 +155,8 @@ class PhotoSplitterGUI:
         self.kind_vars = {kind: tk.BooleanVar(value=kind not in disabled) for kind in OPTIONAL_KINDS + (KIND_CROP,)}
         self.blur_strength = tk.DoubleVar(value=cfg.get("blur_strength", DEFAULT_BLUR_STRENGTH))
         self.jpeg_quality = tk.IntVar(value=cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
+        self.output_format = tk.StringVar(value=cfg.get("output_format", "3:4"))
+        self.output_width = tk.IntVar(value=int(cfg.get("output_width", 0) or 0))
         self.signature_position = tk.StringVar(value=cfg.get("signature_position", DEFAULT_SIGNATURE_POSITION))
         self.signature_scale = tk.DoubleVar(value=cfg.get("signature_scale", DEFAULT_SIGNATURE_SCALE))
         self.language = tk.StringVar(value=i18n.get_language())
@@ -437,6 +441,29 @@ class PhotoSplitterGUI:
             row=0, column=1, padx=8
         )
         ttk.Label(output_group, text=t("jpeg_quality_hint")).grid(row=0, column=2, sticky=tk.W)
+
+        ttk.Label(output_group, text=t("output_format")).grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
+        format_keys = list(OUTPUT_FORMATS)
+        format_box = ttk.Combobox(
+            output_group, state="readonly", width=24, values=[t(f"fmt_{key.replace(':', 'x')}") for key in format_keys]
+        )
+        current_format = self.output_format.get()
+        format_box.current(format_keys.index(current_format) if current_format in format_keys else 0)
+        format_box.bind("<<ComboboxSelected>>", lambda e: self.output_format.set(format_keys[format_box.current()]))
+        format_box.grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=8, pady=(10, 0))
+
+        ttk.Label(output_group, text=t("output_width")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
+        width_box = ttk.Combobox(
+            output_group, state="readonly", width=24,
+            values=[t("width_original") if w == 0 else t("width_px", px=w) for w in OUTPUT_WIDTHS],
+        )
+        current_width = self.output_width.get()
+        width_box.current(OUTPUT_WIDTHS.index(current_width) if current_width in OUTPUT_WIDTHS else 0)
+        width_box.bind("<<ComboboxSelected>>", lambda e: self.output_width.set(OUTPUT_WIDTHS[width_box.current()]))
+        width_box.grid(row=2, column=1, columnspan=2, sticky=tk.W, padx=8, pady=(10, 0))
+        ttk.Label(output_group, text=t("output_width_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0)
+        )
 
         kinds_group = ttk.LabelFrame(tab, text=t("kinds_group"), padding=12)
         kinds_group.grid(row=5, column=0, sticky=tk.EW)
@@ -943,6 +970,8 @@ class PhotoSplitterGUI:
         cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()]
         cfg["blur_strength"] = _var_value(self.blur_strength, DEFAULT_BLUR_STRENGTH)
         cfg["jpeg_quality"] = _var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
+        cfg["output_format"] = self.output_format.get() if self.output_format.get() in OUTPUT_FORMATS else "3:4"
+        cfg["output_width"] = int(_var_value(self.output_width, 0) or 0)
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
         cfg["update_check"] = bool(self.update_check.get())

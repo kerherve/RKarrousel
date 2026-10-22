@@ -15,7 +15,7 @@ from PIL import Image, ImageTk
 from i18n import kind_label, t
 from crop_editor import CropEditor
 from image_viewer import ImageViewer
-from utils import KIND_CROP, crop_offset_for, item_key, merge_order, planned_items, render_outputs
+from utils import KIND_CROP, crop_offset_for, item_key, output_format_of, merge_order, planned_items, render_outputs
 
 COLUMNS = 3
 BASE_TILE_W = 210
@@ -27,6 +27,7 @@ DRAG_THRESHOLD = 6
 RENDER_KEYS = (
     "frame_ratio",
     "frame_enabled",
+    "output_format",
     "landscape_fill_mode",
     "signature_path",
     "border_color",
@@ -72,7 +73,8 @@ class OrderWindow(tk.Toplevel):
         scale = max(1.0, self.winfo_fpixels("1i") / 96)
         self.scale = scale
         self.TILE_W = int(BASE_TILE_W * scale)
-        self.TILE_H = int(BASE_TILE_H * scale)
+        tw, th = output_format_of(config)  # les vignettes ont le format de sortie choisi
+        self.TILE_H = int(BASE_TILE_W * scale * th / tw)
         self.GAP = max(2, int(BASE_GAP * scale))
         self.dark = dark
         self.bg = "#000000" if dark else "#ffffff"  # fond de la grille, comme Instagram

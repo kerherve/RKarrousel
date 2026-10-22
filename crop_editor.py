@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageTk
 
 from i18n import t
-from utils import crop_box_for, crop_offset_for, frame_ratio_of, open_image, render_crop_3_4
+from utils import crop_box_for, crop_offset_for, frame_ratio_of, open_image, output_format_of, render_crop_3_4
 
 WORK_SIDE = 1100  # la photo est réduite pour l'édition : le recadrage est relatif, le rendu reste fidèle
 
@@ -55,7 +55,8 @@ class CropEditor(tk.Toplevel):
         self.view_w = int(self.view_h * self.work.width / self.work.height)
         self.disp_scale = self.view_h / self.work.height
         self.preview_h = min(int(560 * s), self.view_h)
-        self.preview_w = int(self.preview_h * 3 / 4)
+        tw, th = output_format_of(self.config_snapshot)
+        self.preview_w = int(self.preview_h * tw / th)
 
         width = self.view_w + self.preview_w + int(110 * s)
         height = self.view_h + int(150 * s)
@@ -94,7 +95,9 @@ class CropEditor(tk.Toplevel):
     # ------------------------------------------------------------------ géométrie du cadre
     def _box(self):
         """(axe libre, largeur, hauteur) du cadre 3/4 en pixels d'affichage."""
-        axis, crop_w, crop_h = crop_box_for(self.work.width, self.work.height, frame_ratio_of(self.config_snapshot))
+        axis, crop_w, crop_h = crop_box_for(
+            self.work.width, self.work.height, frame_ratio_of(self.config_snapshot), output_format_of(self.config_snapshot)
+        )
         return axis, crop_w * self.disp_scale, crop_h * self.disp_scale
 
     def _free(self) -> float:

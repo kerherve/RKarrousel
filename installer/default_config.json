@@ -8,6 +8,8 @@
   "background_color": "#000000",
   "blur_strength": 1.0,
   "jpeg_quality": 100,
+  "output_format": "3:4",
+  "output_width": 0,
   "number_files": true,
   "signature_position": "bottom-right",
   "signature_scale": 1.0,
