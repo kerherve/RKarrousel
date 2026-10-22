@@ -1,0 +1,49 @@
+name: Release
+
+# Au push d'un tag vX.Y.Z : tests, compilation de PhotoSplitter.exe sous Windows,
+# puis ajout de PhotoSplitter-vX.Y.Z.exe à la release GitHub (créée si elle n'existe pas).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m unittest discover -s tests
+
+      - name: Build PhotoSplitter.exe
+        shell: cmd
+        run: build_windows.bat
+
+      - name: Smoke test (the exe must build its whole UI)
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          dist/PhotoSplitter.exe --smoke-test smoke.txt
+          for i in $(seq 1 20); do [ -f smoke.txt ] && break; sleep 1; done
+          cat smoke.txt
+          grep -q "^ok" smoke.txt
+
+      - name: Publish release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          cp dist/PhotoSplitter.exe "dist/PhotoSplitter-${VERSION}.exe"
+          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" --title "$VERSION" --generate-notes
+          gh release upload "$VERSION" "dist/PhotoSplitter-${VERSION}.exe" --clobber

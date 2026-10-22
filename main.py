@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import sys
 from pathlib import Path
 
 from utils import (
@@ -7,12 +8,16 @@ from utils import (
     DEFAULT_FRAME_RATIO,
     gather_input_files,
     load_config,
-    process_image,
+    process_batch,
     save_config,
 )
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        # Les consoles Windows (cp1252) ne savent pas encoder → ✅ ⚠️ : on remplace plutôt que planter.
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     config_path = CONFIG_PATH
     config = load_config(config_path)
 
@@ -38,6 +43,18 @@ def main() -> int:
         "--yes",
         action="store_true",
         help="Utiliser automatiquement les dernières préférences enregistrées si aucun chemin n'est fourni",
+    )
+    parser.add_argument(
+        "--number",
+        action="store_true",
+        default=None,
+        help="Préfixer les fichiers générés par un numéro d'ordre (01_, 02_…) ; sinon utilise la préférence enregistrée",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Nombre de photos traitées en parallèle (par défaut 1)",
     )
     parser.add_argument(
         "--save-preferences",
@@ -79,16 +96,17 @@ def main() -> int:
         return 1
 
     print(f"{len(files)} fichier(s) trouvé(s). Destination : {output_dir}")
+    number_files = args.number if args.number is not None else bool(config.get("number_files", False))
+    results = process_batch(files, output_dir, config, number_files=number_files, workers=args.workers)
+
     successful = 0
-    for path in files:
-        try:
-            output_files = process_image(path, output_dir, config)
-            if output_files:
-                successful += 1
-                for out in output_files:
-                    print(f"   ✅ {out}")
-        except Exception as exc:
-            print(f"❌ Erreur pour {path.name} : {exc}")
+    for result in results:
+        if result.status == "ok":
+            successful += 1
+            for out in result.outputs:
+                print(f"   ✅ {out}")
+        elif result.status == "error":
+            print(f"❌ Erreur pour {result.path.name} : {result.message}")
 
     print(f"Terminé : {successful}/{len(files)} fichier(s) traités")
     return 0

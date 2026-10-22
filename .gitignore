@@ -7,3 +7,4 @@ tmp_out/
 build/
 dist/
 *.spec
+image_splitter.log*

@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 import json
+import logging
+import os
+import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageFilter, ImageOps
 
@@ -23,6 +29,26 @@ DEFAULT_LANDSCAPE_FILL_MODE = "black"
 LANDSCAPE_FILL_MODES = {"black", "blur"}
 LANDSCAPE_SIGNATURE_SIZE_FACTOR = 1.2
 LANDSCAPE_SIGNATURE_MARGIN_RATIO = 0.03
+DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
+DEFAULT_BLUR_STRENGTH = 1.0
+DEFAULT_JPEG_QUALITY = 100
+DEFAULT_SIGNATURE_POSITION = "bottom-right"
+SIGNATURE_POSITIONS = ("bottom-right", "bottom-center", "bottom-left")
+DEFAULT_SIGNATURE_SCALE = 1.0
+DEFAULT_NUMBER_FILES = True
+PATH_CONFIG_KEYS = ("last_source_dir", "last_dest_dir", "signature_path")
+LOG_FILE_NAME = "image_splitter.log"
+LOG_PATH = APP_DIR / LOG_FILE_NAME
+
+logger = logging.getLogger("imagesplitter")
+
+
+def say(message: str) -> None:
+    """print() qui ne plante jamais : consoles Windows en cp1252 (→, ⚠️ non encodables) ou sans console (exe fenêtré)."""
+    try:
+        print(message)
+    except Exception:
+        pass
 
 
 def resolve_config_path() -> Path:
@@ -39,21 +65,94 @@ def resolve_config_path() -> Path:
 CONFIG_PATH = resolve_config_path()
 
 
+_WSL_PATH = re.compile(r"^/mnt/([a-zA-Z])(?:/(.*))?$")
+_WIN_PATH = re.compile(r"^([a-zA-Z]):[\\/]*(.*)$")
+
+
+def normalize_path(value: str) -> str:
+    """Convertit un chemin WSL (/mnt/c/...) en chemin Windows (C:/...) et inversement,
+    selon le système courant, pour qu'une config écrite d'un côté reste valable de l'autre."""
+    if not value or not isinstance(value, str):
+        return value
+    if os.name == "nt":
+        match = _WSL_PATH.match(value)
+        if match:
+            return f"{match.group(1).upper()}:/{match.group(2) or ''}"
+    else:
+        match = _WIN_PATH.match(value)
+        if match:
+            return f"/mnt/{match.group(1).lower()}/{match.group(2).replace(chr(92), '/')}"
+    return value
+
+
 def load_config(config_path: Path) -> dict:
     if config_path.exists():
         try:
-            return json.loads(config_path.read_text())
+            config = json.loads(config_path.read_text(encoding="utf-8"))
         except Exception:
             return {}
+        if isinstance(config, dict):
+            for key in PATH_CONFIG_KEYS:
+                if key in config:
+                    config[key] = normalize_path(config[key])
+            return config
     return {}
 
 
 def save_config(config_path: Path, config: dict) -> None:
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False))
+        config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as exc:
-        print(f"⚠️ Impossible de sauvegarder la configuration: {exc}")
+        logger.warning("Impossible de sauvegarder la configuration: %s", exc)
+
+
+def parse_color(value, default=DEFAULT_BORDER_COLOR) -> Tuple[int, int, int]:
+    """Accepte '#RRGGBB' / 'RRGGBB' ou un triplet RGB ; renvoie `default` si invalide."""
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        try:
+            return tuple(max(0, min(255, int(v))) for v in value)  # type: ignore[return-value]
+        except (TypeError, ValueError):
+            return default
+    if isinstance(value, str):
+        text = value.strip().lstrip("#")
+        if len(text) == 3:
+            text = "".join(ch * 2 for ch in text)
+        if len(text) == 6:
+            try:
+                return (int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
+            except ValueError:
+                return default
+    return default
+
+
+def _number(config: dict, key: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(config.get(key, default))
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, value))
+
+
+def border_color_of(config: dict) -> Tuple[int, int, int]:
+    return parse_color(config.get("border_color"), DEFAULT_BORDER_COLOR)
+
+
+def blur_strength_of(config: dict) -> float:
+    return _number(config, "blur_strength", DEFAULT_BLUR_STRENGTH, 0.2, 5.0)
+
+
+def jpeg_quality_of(config: dict) -> int:
+    return int(_number(config, "jpeg_quality", DEFAULT_JPEG_QUALITY, 50, 100))
+
+
+def signature_scale_of(config: dict) -> float:
+    return _number(config, "signature_scale", DEFAULT_SIGNATURE_SCALE, 0.3, 3.0)
+
+
+def signature_position_of(config: dict) -> str:
+    position = config.get("signature_position", DEFAULT_SIGNATURE_POSITION)
+    return position if position in SIGNATURE_POSITIONS else DEFAULT_SIGNATURE_POSITION
 
 
 def is_supported_image(path: Path) -> bool:
@@ -104,42 +203,47 @@ def frame_image_with_outer_edge(img: Image.Image, border_px: int, outer_side: st
     return ImageOps.expand(img, border=border, fill=color)
 
 
-def save_image(img: Image.Image, output_path: Path) -> None:
+def save_image(img: Image.Image, output_path: Path, quality: int = DEFAULT_JPEG_QUALITY) -> None:
     params = {}
     suffix = output_path.suffix.lower()
     if suffix in {".jpg", ".jpeg"}:
-        params = {"quality": 100, "subsampling": 0, "optimize": True}
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
+        params = {"quality": quality, "subsampling": 0, "optimize": True}
     elif suffix == ".png":
         params = {"compress_level": 0}
     output_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, **params)
 
 
-def portrait_3_4_output(img: Image.Image, output_path: Path, config: dict) -> List[Path]:
+def render_portrait_3_4(img: Image.Image, config: dict) -> Image.Image:
     border_px = max(1, int(round(min(img.size) * config.get("frame_ratio", DEFAULT_FRAME_RATIO))))
-    framed = frame_image(img, border_px)
-    save_image(framed, output_path)
-    return [output_path]
+    return frame_image(img, border_px, border_color_of(config))
 
 
-def portrait_2_3_output(img: Image.Image, output_path: Path, config: dict) -> List[Path]:
+def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     sig_path = config.get("signature_path")
     sig_path = Path(sig_path) if sig_path else None
+    color = border_color_of(config)
+    position = signature_position_of(config)
+    sig_scale = signature_scale_of(config)
     if config.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE) == "blur":
-        framed = create_portrait_with_landscape_blur_fill(
+        return create_portrait_with_landscape_blur_fill(
             img,
             sig_path,
             frame_ratio=config.get("frame_ratio", DEFAULT_FRAME_RATIO),
             signature_on_photo=True,
+            border_color=color,
+            blur_strength=blur_strength_of(config),
+            sig_position=position,
+            sig_scale=sig_scale,
         )
-        save_image(framed, output_path)
-        return [output_path]
 
-    signed = add_signature_to_image(img, sig_path)
+    signed = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
 
     src_w, src_h = signed.size
     border_px = max(1, int(round(min(src_w, src_h) * config.get("frame_ratio", DEFAULT_FRAME_RATIO))))
-    framed = frame_image(signed, border_px)
+    framed = frame_image(signed, border_px, color)
 
     min_width = framed.width
     min_height = framed.height
@@ -160,9 +264,7 @@ def portrait_2_3_output(img: Image.Image, output_path: Path, config: dict) -> Li
     x_offset = (portrait_width - framed.width) // 2
     y_offset = (portrait_height - framed.height) // 2
     background.paste(framed, (x_offset, y_offset))
-
-    save_image(background, output_path)
-    return [output_path]
+    return background
 
 
 def add_signature_to_image(
@@ -172,6 +274,7 @@ def add_signature_to_image(
     size_factor: float = 1.0,
     margin_ratio: Optional[float] = None,
     rotate: int = 0,
+    user_scale: float = 1.0,
 ) -> Image.Image:
     if not signature_path or not signature_path.exists():
         return img
@@ -193,6 +296,13 @@ def add_signature_to_image(
         elif sig.width > max_sig_width or sig.height > max_sig_height:
             sig.thumbnail((max_sig_width, max_sig_height), Image.Resampling.LANCZOS)
 
+        # User-chosen size multiplier, applied on top of the automatic sizing above.
+        if user_scale != 1.0:
+            sig = sig.resize(
+                (max(1, int(round(sig.width * user_scale))), max(1, int(round(sig.height * user_scale)))),
+                Image.Resampling.LANCZOS,
+            )
+
         if rotate == 90:
             sig = sig.transpose(Image.Transpose.ROTATE_90)
         elif rotate == 180:
@@ -210,16 +320,27 @@ def add_signature_to_image(
         elif position == "left-center":
             paste_x = margin
             paste_y = (img.height - sig.height) // 2
+        elif position == "bottom-left":
+            paste_x = margin
+            paste_y = img.height - sig.height - margin
         else:
             paste_x = img.width - sig.width - margin
             paste_y = img.height - sig.height - margin
         img.paste(sig, (paste_x, paste_y), sig)
         return img.convert("RGB") if img.mode == "RGBA" else img
     except Exception:
+        logger.exception("Signature ignorée (%s)", signature_path)
         return img
 
 
-def create_portrait_with_landscape_content(img: Image.Image, signature_path: Optional[Path], frame_ratio: float = DEFAULT_FRAME_RATIO) -> Image.Image:
+def create_portrait_with_landscape_content(
+    img: Image.Image,
+    signature_path: Optional[Path],
+    frame_ratio: float = DEFAULT_FRAME_RATIO,
+    border_color=DEFAULT_BORDER_COLOR,
+    sig_position: str = DEFAULT_SIGNATURE_POSITION,
+    sig_scale: float = DEFAULT_SIGNATURE_SCALE,
+) -> Image.Image:
     """
     Crée une image portrait 3/4 avec l'image paysage complète centrée, signée, encadrée et placée sur fond noir.
     """
@@ -228,7 +349,7 @@ def create_portrait_with_landscape_content(img: Image.Image, signature_path: Opt
 
     # Sign before scaling/framing so the signature stays anchored to the
     # photo's own corner (not the page corner), and scales/rotates with it.
-    signed = add_signature_to_image(img, signature_path)
+    signed = add_signature_to_image(img, signature_path, position=sig_position, user_scale=sig_scale)
     src_w, src_h = signed.size
     border_px = max(1, int(round(min(src_w, src_h) * frame_ratio)))
 
@@ -247,7 +368,7 @@ def create_portrait_with_landscape_content(img: Image.Image, signature_path: Opt
         scaled_h = max(1, int(round(src_h * scale)))
 
     signed_scaled = signed.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
-    framed = frame_image(signed_scaled, border_px)
+    framed = frame_image(signed_scaled, border_px, border_color)
 
     background = Image.new("RGB", (portrait_width, portrait_height), (0, 0, 0))
     x_offset = (portrait_width - framed.width) // 2
@@ -263,6 +384,10 @@ def create_portrait_with_landscape_blur_fill(
     frame_ratio: float = DEFAULT_FRAME_RATIO,
     signature_rotation: int = 0,
     signature_on_photo: bool = False,
+    border_color=DEFAULT_BORDER_COLOR,
+    blur_strength: float = DEFAULT_BLUR_STRENGTH,
+    sig_position: str = DEFAULT_SIGNATURE_POSITION,
+    sig_scale: float = DEFAULT_SIGNATURE_SCALE,
 ) -> Image.Image:
     """
     Crée une image portrait 3/4 avec la photo nette étendue jusqu'aux bords (largeur
@@ -303,17 +428,22 @@ def create_portrait_with_landscape_blur_fill(
     crop_y = (bg_h - content_height) // 2
     background = background.crop((crop_x, crop_y, crop_x + content_width, crop_y + content_height))
     blur_radius = max(20, int(round(min(content_width, content_height) * 0.015)))
+    blur_radius = max(1, int(round(blur_radius * blur_strength)))
     background = background.filter(ImageFilter.GaussianBlur(blur_radius))
 
     x_offset = (content_width - src_w) // 2
     y_offset = (content_height - src_h) // 2
     # The blurred fill is built from the unsigned photo so no smeared copy of
     # the signature shows up in the margins.
-    sharp = add_signature_to_image(img, signature_path) if signature_on_photo else img
+    sharp = (
+        add_signature_to_image(img, signature_path, position=sig_position, user_scale=sig_scale)
+        if signature_on_photo
+        else img
+    )
     background.paste(sharp, (x_offset, y_offset))
 
     border_px = max(1, int(round(min(content_width, content_height) * frame_ratio)))
-    framed = frame_image(background, border_px)
+    framed = frame_image(background, border_px, border_color)
     if signature_on_photo:
         return framed
 
@@ -327,12 +457,16 @@ def create_portrait_with_landscape_blur_fill(
         size_factor=LANDSCAPE_SIGNATURE_SIZE_FACTOR,
         margin_ratio=LANDSCAPE_SIGNATURE_MARGIN_RATIO,
         rotate=signature_rotation,
+        user_scale=sig_scale,
     )
 
 
-def split_2_3_to_3_4(img: Image.Image, output_dir: Path, base_name: str, ext: str, config: dict) -> List[Path]:
+def iter_split_2_3_to_3_4(img: Image.Image, config: dict) -> Iterator[Tuple[str, Image.Image]]:
+    """Génère (kind, image) pour un paysage 2/3 : deux moitiés encadrées (panorama)
+    puis les deux versions portrait 3/4 de la photo entière."""
     width, height = img.size
     frame_ratio = config.get("frame_ratio", DEFAULT_FRAME_RATIO)
+    color = border_color_of(config)
     target_width = width // 2
     # Border thickness is based on the crop's own width (the short side),
     # same basis as every other 3/4 output in the app (frame_ratio * short
@@ -355,69 +489,220 @@ def split_2_3_to_3_4(img: Image.Image, output_dir: Path, base_name: str, ext: st
     left_crop = img.crop((0, crop_top, target_width, crop_top + target_height))
     right_crop = img.crop((target_width, crop_top, width, crop_top + target_height))
     # apply frame on three sides: top, bottom and outer vertical edge only
-    left_framed = frame_image_with_outer_edge(left_crop, border_px, "left")
-    right_framed = frame_image_with_outer_edge(right_crop, border_px, "right")
-
-    left_path = output_dir / f"{base_name}_part1{ext}"
-    right_path = output_dir / f"{base_name}_part2{ext}"
-    save_image(left_framed, left_path)
-    save_image(right_framed, right_path)
+    yield "part1", frame_image_with_outer_edge(left_crop, border_px, "left", color)
+    yield "part2", frame_image_with_outer_edge(right_crop, border_px, "right", color)
 
     sig_path = config.get("signature_path")
-    if sig_path:
-        sig_path = Path(sig_path)
-    else:
-        sig_path = None
-
+    sig_path = Path(sig_path) if sig_path else None
+    position = signature_position_of(config)
+    sig_scale = signature_scale_of(config)
     fill_mode = config.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE)
 
     if fill_mode == "blur":
-        left_with_sig = create_portrait_with_landscape_blur_fill(img, sig_path, frame_ratio=frame_ratio)
+        blur = blur_strength_of(config)
+        left_with_sig = create_portrait_with_landscape_blur_fill(
+            img, sig_path, frame_ratio=frame_ratio, border_color=color, blur_strength=blur, sig_scale=sig_scale
+        )
         img_rotated = img.transpose(Image.Transpose.ROTATE_270)
         right_with_sig = create_portrait_with_landscape_blur_fill(
-            img_rotated, sig_path, frame_ratio=frame_ratio, signature_rotation=270
+            img_rotated,
+            sig_path,
+            frame_ratio=frame_ratio,
+            signature_rotation=270,
+            border_color=color,
+            blur_strength=blur,
+            sig_scale=sig_scale,
         )
     else:
-        left_with_sig = create_portrait_with_landscape_content(img, sig_path, frame_ratio=frame_ratio)
+        left_with_sig = create_portrait_with_landscape_content(
+            img, sig_path, frame_ratio=frame_ratio, border_color=color, sig_position=position, sig_scale=sig_scale
+        )
         # Sign the upright photo first, then rotate the signed result as one block
         # so the signature turns together with the photo instead of staying upright.
-        signed_for_rotation = add_signature_to_image(img, sig_path)
+        signed_for_rotation = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
         img_rotated = signed_for_rotation.transpose(Image.Transpose.ROTATE_270)
-        right_with_sig = create_portrait_with_landscape_content(img_rotated, None, frame_ratio=frame_ratio)
+        right_with_sig = create_portrait_with_landscape_content(
+            img_rotated, None, frame_ratio=frame_ratio, border_color=color
+        )
 
-    left_sig_path = output_dir / f"{base_name}_part1_with_sig{ext}"
-    right_sig_path = output_dir / f"{base_name}_part2_with_sig{ext}"
-    save_image(left_with_sig, left_sig_path)
-    save_image(right_with_sig, right_sig_path)
-
-    return [left_path, right_path, left_sig_path, right_sig_path]
+    yield "part1_with_sig", left_with_sig
+    yield "part2_with_sig", right_with_sig
 
 
-def process_image(input_path: Path, output_dir: Path, config: dict) -> List[Path]:
+def kinds_for_ratio(ratio_type: Optional[str], config: dict) -> List[str]:
+    """Types de sorties produites pour un ratio donné (sans rien calculer)."""
+    if ratio_type == "portrait_3_4":
+        return ["framed"]
+    if ratio_type == "portrait_2_3":
+        return ["with_sig" if config.get("signature_path") else "framed"]
+    if ratio_type == "landscape_2_3":
+        return ["part1", "part2", "part1_with_sig", "part2_with_sig"]
+    return []
+
+
+def iter_outputs(img: Image.Image, config: dict) -> Iterator[Tuple[str, Image.Image]]:
+    """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque."""
+    ratio_type = detect_ratio_type(*img.size)
+    if ratio_type == "portrait_3_4":
+        yield "framed", render_portrait_3_4(img, config)
+    elif ratio_type == "portrait_2_3":
+        yield kinds_for_ratio(ratio_type, config)[0], render_portrait_2_3(img, config)
+    elif ratio_type == "landscape_2_3":
+        yield from iter_split_2_3_to_3_4(img, config)
+
+
+def peek_ratio_type(path: Path) -> Optional[str]:
+    """Détecte le type de ratio en ne lisant que l'en-tête de l'image (orientation EXIF comprise)."""
+    with Image.open(path) as img:
+        width, height = img.size
+        try:
+            orientation = img.getexif().get(0x0112, 1)
+        except Exception:
+            orientation = 1
+    if orientation in (5, 6, 7, 8):
+        width, height = height, width
+    return detect_ratio_type(width, height)
+
+
+def item_key(source: Path, kind: str) -> str:
+    return f"{source}|{kind}"
+
+
+def output_name(source: Path, kind: str, prefix: str = "") -> str:
+    return f"{prefix}{source.stem}_{kind}{source.suffix or '.jpg'}"
+
+
+def planned_items(files: Sequence[Path], config: dict) -> List[Tuple[Path, str]]:
+    """Liste à plat (source, kind) de toutes les images de sortie prévues, dans l'ordre naturel."""
+    items: List[Tuple[Path, str]] = []
+    for path in files:
+        try:
+            ratio_type = peek_ratio_type(path)
+        except Exception:
+            logger.exception("Lecture impossible : %s", path)
+            continue
+        for kind in kinds_for_ratio(ratio_type, config):
+            items.append((path, kind))
+    return items
+
+
+def merge_order(order: Sequence[str], items: Sequence[Tuple[Path, str]]) -> List[str]:
+    """Ordre final des clés : l'ordre choisi par l'utilisateur d'abord (sans les éléments disparus),
+    puis les nouveaux éléments à la suite dans l'ordre naturel."""
+    available = [item_key(path, kind) for path, kind in items]
+    available_set = set(available)
+    merged = [key for key in order if key in available_set]
+    seen = set(merged)
+    merged.extend(key for key in available if key not in seen)
+    return merged
+
+
+def build_prefixes(ordered_keys: Sequence[str]) -> Dict[str, str]:
+    width = max(2, len(str(len(ordered_keys))))
+    return {key: f"{index:0{width}d}_" for index, key in enumerate(ordered_keys, start=1)}
+
+
+def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> List[Tuple[str, Image.Image]]:
+    """Rend toutes les sorties d'une photo en mémoire. `max_side` réduit la source (aperçus rapides)."""
+    img = open_image(path)
+    if max_side and max(img.size) > max_side:
+        img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    return list(iter_outputs(img, config))
+
+
+def process_image(
+    input_path: Path,
+    output_dir: Path,
+    config: dict,
+    prefixes: Optional[Dict[str, str]] = None,
+) -> List[Path]:
     img = open_image(input_path)
     width, height = img.size
     ratio_type = detect_ratio_type(width, height)
-    base_name = input_path.stem
-    ext = input_path.suffix or ".jpg"
+    labels = {
+        "portrait_3_4": "portrait 3/4",
+        "portrait_2_3": "portrait 2/3",
+        "landscape_2_3": "paysage 2/3",
+    }
+    if ratio_type is None:
+        say(f"⚠️ Ignoré : ratio non supporté pour {input_path.name} ({width}x{height})")
+        return []
+    say(f"→ {input_path.name} : {labels[ratio_type]} détecté")
+
+    quality = jpeg_quality_of(config)
     output_files: List[Path] = []
-
-    if ratio_type == "portrait_3_4":
-        print(f"→ {input_path.name} : portrait 3/4 détecté")
-        output_files = portrait_3_4_output(img, output_dir / f"{base_name}_framed{ext}", config)
-    elif ratio_type == "portrait_2_3":
-        print(f"→ {input_path.name} : portrait 2/3 détecté")
-        if config.get("signature_path"):
-            output_plugin = output_dir / f"{base_name}_with_sig{ext}"
-        else:
-            output_plugin = output_dir / f"{base_name}_framed{ext}"
-        output_files = portrait_2_3_output(img, output_plugin, config)
-    elif ratio_type == "landscape_2_3":
-        print(f"→ {input_path.name} : paysage 2/3 détecté")
-        output_files = split_2_3_to_3_4(img, output_dir, base_name, ext, config)
-    else:
-        print(f"⚠️ Ignoré : ratio non supporté pour {input_path.name} ({width}x{height})")
-
+    for kind, out_img in iter_outputs(img, config):
+        prefix = (prefixes or {}).get(item_key(input_path, kind), "")
+        out_path = output_dir / output_name(input_path, kind, prefix)
+        save_image(out_img, out_path, quality)
+        output_files.append(out_path)
     return output_files
+
+
+@dataclass
+class FileResult:
+    path: Path
+    status: str  # "ok" | "skipped" | "error" | "cancelled"
+    outputs: List[Path] = field(default_factory=list)
+    message: str = ""
+
+
+def process_batch(
+    files: Sequence[Path],
+    output_dir: Path,
+    config: dict,
+    order: Optional[Sequence[str]] = None,
+    number_files: bool = False,
+    progress: Optional[Callable[[int, int, Path], None]] = None,
+    cancel: Optional[threading.Event] = None,
+    workers: int = 1,
+) -> List[FileResult]:
+    """Traite un lot de photos. Si `number_files`, chaque sortie reçoit un préfixe 01_, 02_… selon
+    `order` (liste de clés item_key ; les éléments absents suivent dans l'ordre naturel)."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prefixes = None
+    if number_files:
+        items = planned_items(files, config)
+        prefixes = build_prefixes(merge_order(order or [], items))
+
+    total = len(files)
+    results: Dict[Path, FileResult] = {}
+    lock = threading.Lock()
+    done = 0
+
+    def work(path: Path) -> FileResult:
+        if cancel is not None and cancel.is_set():
+            return FileResult(path, "cancelled")
+        try:
+            outputs = process_image(path, output_dir, config, prefixes)
+        except Exception as exc:
+            logger.exception("Erreur sur %s", path)
+            return FileResult(path, "error", message=str(exc) or exc.__class__.__name__)
+        if not outputs:
+            return FileResult(path, "skipped", message="ratio non supporté")
+        return FileResult(path, "ok", outputs)
+
+    def finished(result: FileResult) -> None:
+        nonlocal done
+        with lock:
+            results[result.path] = result
+            done += 1
+            count = done
+        if progress is not None:
+            progress(count, total, result.path)
+
+    workers = max(1, min(workers, total or 1))
+    if workers == 1:
+        for path in files:
+            finished(work(path))
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(work, path) for path in files]
+            for future in as_completed(futures):
+                finished(future.result())
+
+    return [results[path] for path in files if path in results]
 
 
 def gather_input_files(paths: List[str]) -> List[Path]:
@@ -425,7 +710,7 @@ def gather_input_files(paths: List[str]) -> List[Path]:
     for raw in paths:
         source = Path(raw).expanduser()
         if not source.exists():
-            print(f"⚠️ Chemin introuvable : {raw}")
+            say(f"⚠️ Chemin introuvable : {raw}")
             continue
         if source.is_dir():
             for candidate in sorted(source.iterdir()):
@@ -435,7 +720,7 @@ def gather_input_files(paths: List[str]) -> List[Path]:
             if is_supported_image(source):
                 result.append(source)
             else:
-                print(f"⚠️ Format non supporté : {source.name}")
+                say(f"⚠️ Format non supporté : {source.name}")
         else:
-            print(f"⚠️ Ignoré : {raw}")
+            say(f"⚠️ Ignoré : {raw}")
     return result
