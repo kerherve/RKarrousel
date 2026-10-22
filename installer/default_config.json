@@ -1,0 +1,17 @@
+{
+  "language": "@LANG@",
+  "theme": "auto",
+  "frame_ratio": 0.01,
+  "border_color": "#FFFFFF",
+  "landscape_fill_mode": "blur",
+  "background_color": "#000000",
+  "blur_strength": 1.0,
+  "jpeg_quality": 100,
+  "number_files": true,
+  "signature_position": "bottom-right",
+  "signature_scale": 1.0,
+  "disabled_kinds": [],
+  "last_dest_dir": "@DOCS@/RKarrousel",
+  "gdrive_enabled": false,
+  "gdrive_folder": "RKarrousel"
+}

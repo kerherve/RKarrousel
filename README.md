@@ -14,7 +14,14 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 
 ## Utiliser l'appli (Windows)
 
-Téléchargez `RKarrousel.exe` depuis les *Releases* du dépôt, puis lancez-le.
+Téléchargez depuis les *Releases* du dépôt :
+
+- **`RKarrousel-Setup-vX.Y.Z.exe`** (recommandé) : installateur Windows, sans droits administrateur. Il installe
+  l'appli dans `%LOCALAPPDATA%\Programs\RKarrousel`, crée l'entrée du menu Démarrer (et un raccourci bureau en option)
+  et dépose des **réglages par défaut** (cadre 1 %, fond flouté, numérotation, sortie dans *Documents\RKarrousel*, langue
+  de l'installateur) modifiables dans `installer/default_config.json`. Une mise à jour **conserve vos réglages** ;
+  la désinstallation propose de les supprimer.
+- **`RKarrousel-vX.Y.Z.exe`** : version portable, un seul fichier, à lancer où vous voulez.
 
 - **Fichiers** : ajoutez des fichiers ou des dossiers (ou glissez-déposez-les), choisissez le dossier de destination.
 - **Réglages** : épaisseur et couleur du cadre, fond uni (couleur au choix) ou flouté et intensité du flou, signature (position, taille),
@@ -60,13 +67,16 @@ python photo_splitter_gui.py        # interface graphique
 python -m unittest discover -s tests
 ```
 
-## Compiler l'exécutable
+## Compiler l'exécutable et l'installateur
 
 `build_windows.bat` (Windows, Python installé) produit `dist\RKarrousel.exe`.
+L'installateur se compile ensuite avec [Inno Setup 6](https://jrsoftware.org/isinfo.php) :
+`ISCC.exe /DAppVersion=X.Y.Z installer\RKarrousel.iss` produit `dist\RKarrousel-Setup-vX.Y.Z.exe`.
 Depuis WSL : voir `.claude/skills/imagesplitter-release/SKILL.md`.
 
 ## Publier une version
 
 Le numéro de version est dans `version.py` (affiché dans le titre de la fenêtre et dans « À propos »).
 Pousser un tag `vX.Y.Z` déclenche le workflow GitHub Actions `release.yml` qui exécute les tests, compile
-l'exécutable Windows et l'ajoute à la release sous le nom `RKarrousel-vX.Y.Z.exe`.
+l'exécutable Windows, fabrique l'installateur, teste une installation silencieuse, puis ajoute
+`RKarrousel-vX.Y.Z.exe` et `RKarrousel-Setup-vX.Y.Z.exe` à la release. Le tag doit correspondre à `version.py`.
