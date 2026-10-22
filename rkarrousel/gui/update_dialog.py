@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from i18n import t
+from rkarrousel.i18n import t
 
 
 class UpdateDialog(tk.Toplevel):

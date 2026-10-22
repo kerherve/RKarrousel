@@ -11,7 +11,7 @@ if errorlevel 1 (
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt pyinstaller
 
-python -m PyInstaller --noconfirm --onefile --windowed --collect-all tkinterdnd2 --collect-all sv_ttk --name RKarrousel photo_splitter_gui.py
+python -m PyInstaller --noconfirm --onefile --windowed --paths . --collect-all tkinterdnd2 --collect-all sv_ttk --name RKarrousel rkarrousel\__main__.py
 
 echo.
 echo Build termine. L'executable se trouve dans dist\RKarrousel.exe

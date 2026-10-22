@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import updater
+from rkarrousel.services import updater
 
 EXE_BYTES = b"MZ" + b"\x00" * 5000
 

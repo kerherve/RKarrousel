@@ -3,14 +3,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from utils import (
-    CONFIG_PATH,
-    DEFAULT_FRAME_RATIO,
-    gather_input_files,
-    load_config,
-    process_batch,
-    save_config,
-)
+from rkarrousel.config import DEFAULT_FRAME_RATIO, load_config, save_config
+from rkarrousel.paths import CONFIG_PATH
+from rkarrousel.pipeline import gather_input_files, process_batch
 
 
 def main() -> int:

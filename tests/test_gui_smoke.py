@@ -20,7 +20,7 @@ class GuiBuildTests(unittest.TestCase):
     """Construit toute l'interface : attrape les oublis d'ordre de création, de variables ou de textes."""
 
     def setUp(self):
-        import photo_splitter_gui as gui
+        from rkarrousel.gui import app as gui
 
         self.gui = gui
         self.tmp = tempfile.TemporaryDirectory()

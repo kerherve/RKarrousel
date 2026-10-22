@@ -11,8 +11,10 @@ from typing import Optional
 
 from PIL import Image, ImageTk
 
-from i18n import kind_label, t
-from utils import background_color_of, border_color_of, measure_border, render_output
+from rkarrousel.i18n import kind_label, t
+from rkarrousel.config import background_color_of, border_color_of
+from rkarrousel.imaging.frames import measure_border
+from rkarrousel.outputs import render_output
 
 MIN_SCALE = 0.02
 MAX_SCALE = 32.0

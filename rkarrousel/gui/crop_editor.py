@@ -8,8 +8,11 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
-from i18n import t
-from utils import crop_box_for, crop_offset_for, frame_ratio_of, open_image, output_format_of, render_crop_3_4
+from rkarrousel.i18n import t
+from rkarrousel.config import crop_offset_for, frame_ratio_of
+from rkarrousel.formats import crop_box_for, output_format_of
+from rkarrousel.imaging.canvases import render_crop_3_4
+from rkarrousel.imaging.frames import open_image
 
 WORK_SIDE = 1100  # la photo est réduite pour l'édition : le recadrage est relatif, le rendu reste fidèle
 

@@ -17,7 +17,7 @@ No `Co-Authored-By` lines in commits (user preference).
 Pushing a `v*` tag triggers `.github/workflows/release.yml` (Windows runner): unit tests, `build_windows.bat`,
 a `--smoke-test` of the exe, the Inno Setup installer (`installer/RKarrousel.iss`, default settings in
 `installer/default_config.json`), a silent install/uninstall test, then it creates the release (if missing) and uploads
-`RKarrousel-vX.Y.Z.exe` and `RKarrousel-Setup-vX.Y.Z.exe`. The tag must equal `v` + `version.py` or the workflow fails.
+`RKarrousel-vX.Y.Z.exe` and `RKarrousel-Setup-vX.Y.Z.exe`. The tag must equal `v` + `rkarrousel/version.py` or the workflow fails.
 Dry run without publishing: `gh workflow run release.yml --ref master` (installer kept as a run artifact).
 The local build below is still needed to install the exe on the user's machine and as a fallback if CI fails.
 
@@ -25,13 +25,13 @@ The local build below is still needed to install the exe on the user's machine a
 The app updates itself from the latest GitHub release: `updater.py` looks for an asset named exactly
 `RKarrousel-vX.Y.Z.exe` (portable exe, X.Y.Z = tag without `v`) and replaces the running exe in place (config untouched).
 So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is public, so the updater needs no token (token support was removed). A real self-update can be tested with two exes built from
-different `version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKARROUSEL_UPDATE_REPO` env vars) and
+different `rkarrousel/version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKARROUSEL_UPDATE_REPO` env vars) and
 `RKarrousel.exe --self-update log.txt`. NEVER stop test processes by name on the user's machine (see memory).
 
 ## Steps
 1. Make sure the work is committed and pushed on `master` (`git status` clean apart from ignored/untracked build output)
-   and that `python3 -m unittest discover -s tests` passes.
-2. Pick the next version, set `__version__` in `version.py` (shown in the GUI title and the "À propos" dialog), commit and push it, then create an annotated tag on that commit: `git tag -a vX.Y.Z -m "vX.Y.Z - summary"`. The tag must never be created before the version bump.
+   and that `python3 -m unittest discover -s tests -t .` passes.
+2. Pick the next version, set `__version__` in `rkarrousel/version.py` (shown in the GUI title and the "À propos" dialog), commit and push it, then create an annotated tag on that commit: `git tag -a vX.Y.Z -m "vX.Y.Z - summary"`. The tag must never be created before the version bump.
 3. Build the .exe from WSL using the Windows Python (`python.exe`/`py.exe` are on the PATH). `cmd.exe` rejects UNC paths,
    so build in a Windows folder from the tagged sources, then copy the result into `dist/`:
    ```

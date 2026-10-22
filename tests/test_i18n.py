@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import i18n
+from rkarrousel import i18n
 
 
 class I18nTests(unittest.TestCase):
@@ -23,8 +23,8 @@ class I18nTests(unittest.TestCase):
 
     def test_every_key_used_in_the_code_exists(self):
         used = set()
-        for name in ("photo_splitter_gui.py", "order_window.py", "image_viewer.py", "crop_editor.py", "update_dialog.py"):
-            used |= set(re.findall(r"\bt\(\s*[\"']([\w-]+)[\"']", (ROOT / name).read_text(encoding="utf-8")))
+        for path in (ROOT / "rkarrousel" / "gui").rglob("*.py"):
+            used |= set(re.findall(r"\bt\(\s*[\"']([\w-]+)[\"']", path.read_text(encoding="utf-8")))
         used |= {"set_kind_part1", "set_kind_part2", "kind_part_n", "width_original", "width_px"}
         used |= {f"fmt_{k}" for k in ("3x4", "4x5", "1x1", "9x16")}
         used |= {f"upd_{step}" for step in ("downloading", "verifying", "installing")}

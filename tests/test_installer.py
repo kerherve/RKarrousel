@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import utils
+from rkarrousel import config as conf, formats, paths
 
 KNOWN_KEYS = {
     "language", "theme", "frame_enabled", "frame_ratio", "border_color", "landscape_fill_mode", "background_color",
@@ -32,31 +32,31 @@ class InstallerDefaultsTests(unittest.TestCase):
     def test_values_are_accepted_by_the_app(self):
         config = default_config()
         self.assertTrue(0.001 <= config["frame_ratio"] <= 0.2)
-        self.assertIn(config["landscape_fill_mode"], utils.LANDSCAPE_FILL_MODES)
-        self.assertIn(config["signature_position"], utils.SIGNATURE_POSITIONS)
-        self.assertEqual(utils.parse_color(config["border_color"]), (255, 255, 255))
-        self.assertEqual(utils.parse_color(config["background_color"]), (0, 0, 0))
-        self.assertEqual(utils.jpeg_quality_of(config), config["jpeg_quality"])
-        self.assertEqual(utils.blur_strength_of(config), config["blur_strength"])
-        self.assertEqual(utils.signature_scale_of(config), config["signature_scale"])
-        self.assertEqual(utils.disabled_kinds_of(config), set())
+        self.assertIn(config["landscape_fill_mode"], conf.LANDSCAPE_FILL_MODES)
+        self.assertIn(config["signature_position"], conf.SIGNATURE_POSITIONS)
+        self.assertEqual(conf.parse_color(config["border_color"]), (255, 255, 255))
+        self.assertEqual(conf.parse_color(config["background_color"]), (0, 0, 0))
+        self.assertEqual(conf.jpeg_quality_of(config), config["jpeg_quality"])
+        self.assertEqual(conf.blur_strength_of(config), config["blur_strength"])
+        self.assertEqual(conf.signature_scale_of(config), config["signature_scale"])
+        self.assertEqual(conf.disabled_kinds_of(config), set())
         self.assertIn(config["theme"], ("auto", "light", "dark"))
-        self.assertIn(config["output_format"], utils.OUTPUT_FORMATS)
-        self.assertIn(config["output_width"], utils.OUTPUT_WIDTHS)
+        self.assertIn(config["output_format"], formats.OUTPUT_FORMATS)
+        self.assertIn(config["output_width"], formats.OUTPUT_WIDTHS)
 
     def test_app_loads_the_default_config(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.json"
             path.write_text(json.dumps(default_config("en")), encoding="utf-8")
-            loaded = utils.load_config(path)
+            loaded = conf.load_config(path)
         self.assertEqual(loaded["language"], "en")
         self.assertTrue(loaded["number_files"])
 
     def test_inno_script_is_consistent_with_the_repo(self):
         script = (ROOT / "installer" / "RKarrousel.iss").read_text(encoding="utf-8-sig")
         self.assertIn("default_config.json", script)
-        self.assertIn(utils.CONFIG_FILE_NAME, script)  # même nom de fichier que celui lu par l'appli
+        self.assertIn(paths.CONFIG_FILE_NAME, script)  # même nom de fichier que celui lu par l'appli
         self.assertIn("PrivilegesRequired=lowest", script)  # la config doit rester inscriptible à côté de l'exe
         self.assertIn("@LANG@", (ROOT / "installer" / "default_config.json").read_text(encoding="utf-8"))
         for token in ("@LANG@", "@DOCS@"):

@@ -14,14 +14,13 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from PIL import Image, ImageOps, ImageTk
 
-import gdrive
-import i18n
-import updater
-from i18n import kind_setting_label, t
-from order_window import OrderWindow
-from update_dialog import UpdateDialog
-from utils import (
-    CONFIG_PATH,
+from rkarrousel.services import gdrive
+from rkarrousel import i18n
+from rkarrousel.services import updater
+from rkarrousel.i18n import kind_setting_label, t
+from rkarrousel.gui.order_window import OrderWindow
+from rkarrousel.gui.update_dialog import UpdateDialog
+from rkarrousel.config import (
     DEFAULT_BACKGROUND_COLOR_HEX,
     DEFAULT_BLUR_STRENGTH,
     DEFAULT_BORDER_COLOR_HEX,
@@ -31,22 +30,17 @@ from utils import (
     DEFAULT_NUMBER_FILES,
     DEFAULT_SIGNATURE_POSITION,
     DEFAULT_SIGNATURE_SCALE,
-    GDRIVE_TOKEN_PATH,
-    KIND_CROP,
-    LOG_PATH,
-    OPTIONAL_KINDS,
-    OUTPUT_FORMATS,
-    OUTPUT_WIDTHS,
     SIGNATURE_POSITIONS,
-    FileResult,
-    gather_input_files,
     disabled_kinds_of,
     load_config,
     parse_color,
-    process_batch,
     save_config,
 )
-from version import __version__
+from rkarrousel.formats import OUTPUT_FORMATS, OUTPUT_WIDTHS
+from rkarrousel.kinds import KIND_CROP, OPTIONAL_KINDS
+from rkarrousel.paths import CONFIG_PATH, GDRIVE_TOKEN_PATH, LOG_PATH
+from rkarrousel.pipeline import FileResult, gather_input_files, process_batch
+from rkarrousel.version import __version__
 
 # Le glisser-déposer de fichiers est optionnel : sans `tkinterdnd2`, l'appli fonctionne comme avant.
 try:

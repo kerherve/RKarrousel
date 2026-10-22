@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import gdrive
+from rkarrousel.services import gdrive
 
 
 class FakeGoogle(http.server.ThreadingHTTPServer):

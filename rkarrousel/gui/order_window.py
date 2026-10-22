@@ -12,10 +12,14 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from PIL import Image, ImageTk
 
-from i18n import kind_label, t
-from crop_editor import CropEditor
-from image_viewer import ImageViewer
-from utils import KIND_CROP, crop_offset_for, item_key, output_format_of, merge_order, planned_items, render_outputs
+from rkarrousel.i18n import kind_label, t
+from rkarrousel.gui.crop_editor import CropEditor
+from rkarrousel.gui.image_viewer import ImageViewer
+from rkarrousel.config import crop_offset_for
+from rkarrousel.formats import output_format_of
+from rkarrousel.kinds import KIND_CROP
+from rkarrousel.outputs import item_key, render_outputs
+from rkarrousel.pipeline import merge_order, planned_items
 
 COLUMNS = 3
 BASE_TILE_W = 210
