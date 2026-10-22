@@ -8,3 +8,4 @@ build/
 dist/
 *.spec
 image_splitter.log*
+gdrive_token.json

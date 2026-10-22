@@ -33,6 +33,24 @@ Téléchargez `RKarrousel.exe` depuis les *Releases* du dépôt, puis lancez-le.
 
 La configuration `.image_splitter_config.json` est stockée à côté de l'exécutable.
 
+## Envoi sur Google Drive (optionnel)
+
+Dans **Réglages → Google Drive**, cochez « Envoyer les images sur Google Drive après le traitement » : les images
+générées sont envoyées, dans l'ordre numéroté, vers le dossier Drive indiqué (créé au besoin, `Instagram/2026` crée un
+sous-dossier ; un fichier du même nom est mis à jour au lieu d'être dupliqué).
+
+Configuration, une seule fois (le bouton « Comment faire ? » de l'appli résume ces étapes) :
+
+1. Sur [console.cloud.google.com](https://console.cloud.google.com), créez un projet et activez **Google Drive API**.
+2. « Écran de consentement OAuth » : type *Externe*, nom et e-mail, puis **Publier l'application** (sinon l'accès expire
+   au bout de 7 jours).
+3. « Identifiants » → *ID client OAuth* → type **Application de bureau** ; téléchargez le fichier JSON.
+4. Dans l'appli : **Charger les identifiants (JSON)…**, puis **Se connecter** (autorisation dans le navigateur ;
+   Google peut afficher « application non vérifiée » : *Paramètres avancés* → *Continuer*).
+
+L'appli utilise la portée `drive.file` : elle ne voit que les fichiers qu'elle envoie, jamais le reste du Drive.
+Le jeton de connexion est enregistré dans `gdrive_token.json`, à côté de l'exécutable (à ne pas partager).
+
 ## En ligne de commande
 
 ```bash

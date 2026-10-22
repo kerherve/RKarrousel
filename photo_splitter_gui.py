@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from PIL import Image, ImageOps, ImageTk
 
+import gdrive
 import i18n
 from i18n import kind_label, t
 from order_window import OrderWindow
@@ -26,6 +27,7 @@ from utils import (
     DEFAULT_NUMBER_FILES,
     DEFAULT_SIGNATURE_POSITION,
     DEFAULT_SIGNATURE_SCALE,
+    GDRIVE_TOKEN_PATH,
     KIND_CROP,
     LOG_PATH,
     OPTIONAL_KINDS,
@@ -146,6 +148,11 @@ class PhotoSplitterGUI:
         self.signature_position = tk.StringVar(value=cfg.get("signature_position", DEFAULT_SIGNATURE_POSITION))
         self.signature_scale = tk.DoubleVar(value=cfg.get("signature_scale", DEFAULT_SIGNATURE_SCALE))
         self.language = tk.StringVar(value=i18n.get_language())
+        self.gdrive_enabled = tk.BooleanVar(value=bool(cfg.get("gdrive_enabled", False)))
+        self.gdrive_folder = tk.StringVar(value=cfg.get("gdrive_folder", "RKarrousel"))
+        self.gdrive_status = tk.StringVar(value="")
+        self.gdrive_cancel = threading.Event()
+        self.batch_config: dict = {}
         self.status_text = tk.StringVar(value="")
         self.selected_file_info = tk.StringVar(value="")
         self.progress_value = tk.DoubleVar(value=0)
@@ -419,6 +426,28 @@ class PhotoSplitterGUI:
             row=3, column=0, columnspan=2, sticky=tk.W, pady=(6, 0)
         )
 
+        drive_group = ttk.LabelFrame(tab, text=t("gd_group"), padding=12)
+        drive_group.grid(row=6, column=0, sticky=tk.EW, pady=(8, 0))
+        drive_group.columnconfigure(0, weight=1)
+        ttk.Checkbutton(drive_group, text=t("gd_enable"), variable=self.gdrive_enabled).grid(
+            row=0, column=0, columnspan=4, sticky=tk.W
+        )
+        ttk.Label(drive_group, textvariable=self.gdrive_status).grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
+        buttons = ttk.Frame(drive_group)
+        buttons.grid(row=2, column=0, sticky=tk.W, pady=(6, 0))
+        ttk.Button(buttons, text=t("gd_load"), command=self.choose_gdrive_credentials).pack(side=tk.LEFT, padx=(0, 8))
+        self.gdrive_connect_btn = ttk.Button(buttons, text=t("gd_connect"), command=self.connect_gdrive)
+        self.gdrive_connect_btn.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(buttons, text=t("gd_disconnect"), command=self.disconnect_gdrive).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(buttons, text=t("gd_help_btn"), command=self.show_gdrive_help).pack(side=tk.LEFT)
+        folder_row = ttk.Frame(drive_group)
+        folder_row.grid(row=3, column=0, sticky=tk.EW, pady=(10, 0))
+        folder_row.columnconfigure(1, weight=1)
+        ttk.Label(folder_row, text=t("gd_folder")).grid(row=0, column=0, padx=(0, 8))
+        ttk.Entry(folder_row, textvariable=self.gdrive_folder).grid(row=0, column=1, sticky=tk.EW)
+        ttk.Label(drive_group, text=t("gd_folder_hint"), style="Hint.TLabel").grid(row=4, column=0, sticky=tk.W, pady=(4, 0))
+        self.refresh_gdrive_status()
+
     # ------------------------------------------------------------------ glisser-déposer
     def setup_drop_target(self):
         if DND_FILES is None or not hasattr(self.root, "drop_target_register"):
@@ -449,6 +478,113 @@ class PhotoSplitterGUI:
             self.order_window = None
         self.build_ui(select_tab=1)
         self.set_status(t("status_ready"))
+
+    # ------------------------------------------------------------------ Google Drive
+    def drive_client(self) -> Optional[gdrive.DriveClient]:
+        client_id, client_secret = self.config.get("gdrive_client_id"), self.config.get("gdrive_client_secret")
+        if not client_id or not client_secret:
+            return None
+        return gdrive.DriveClient(client_id, client_secret, GDRIVE_TOKEN_PATH)
+
+    def refresh_gdrive_status(self):
+        client = self.drive_client()
+        if client is None:
+            self.gdrive_status.set(t("gd_status_nocreds"))
+        elif client.is_connected():
+            self.gdrive_status.set(t("gd_status_connected"))
+        else:
+            self.gdrive_status.set(t("gd_status_disconnected"))
+
+    def choose_gdrive_credentials(self):
+        path = filedialog.askopenfilename(
+            title=t("gd_choose_json"), filetypes=[("JSON", "*.json"), (t("filetype_all"), "*.*")]
+        )
+        if not path:
+            return
+        try:
+            client_id, client_secret = gdrive.load_client_secrets(path)
+        except gdrive.DriveError as exc:
+            messagebox.showerror(t("dlg_error"), t("gd_error", message=exc))
+            return
+        self.config["gdrive_client_id"], self.config["gdrive_client_secret"] = client_id, client_secret
+        gdrive.clear_token(GDRIVE_TOKEN_PATH)  # d'autres identifiants : il faut se reconnecter
+        save_config(CONFIG_PATH, self.config)
+        self.refresh_gdrive_status()
+        messagebox.showinfo(t("gd_group"), t("gd_creds_ok"))
+
+    def connect_gdrive(self):
+        client = self.drive_client()
+        if client is None:
+            messagebox.showwarning(t("gd_group"), t("gd_need_creds"))
+            return
+        self.gdrive_connect_btn.state(["disabled"])
+        self.gdrive_status.set(t("gd_connecting"))
+        self.gdrive_cancel = threading.Event()
+
+        def work():
+            try:
+                token = gdrive.authorize(client.client_id, client.client_secret, cancel=self.gdrive_cancel)
+                gdrive.save_token(GDRIVE_TOKEN_PATH, token)
+                self.events.put(("gd_connected",))
+            except gdrive.DriveError as exc:
+                self.events.put(("gd_error", str(exc)))
+            except Exception as exc:
+                logger.exception("Connexion Google Drive")
+                self.events.put(("gd_error", str(exc) or exc.__class__.__name__))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def disconnect_gdrive(self):
+        self.gdrive_cancel.set()
+        gdrive.clear_token(GDRIVE_TOKEN_PATH)
+        self.refresh_gdrive_status()
+
+    def show_gdrive_help(self):
+        messagebox.showinfo(t("gd_help_title"), t("gd_help"))
+
+    def start_drive_upload(self, outputs: List[Path], config: dict, lines: List[str], warn: bool):
+        """Envoie les images générées vers Drive dans un thread ; la boîte de fin s'affiche à la fin de l'envoi."""
+        client = self.drive_client()
+        folder = (config.get("gdrive_folder") or "RKarrousel").strip() or "RKarrousel"
+        self.pending_summary = (lines, warn, folder)
+        self.processing = True
+        self.apply_processing_state()
+        self.progress_value.set(0)
+        self.set_status(t("gd_status_uploading", done=0, total=len(outputs), name=""))
+
+        def work():
+            try:
+                results = client.upload_files(
+                    outputs,
+                    folder,
+                    progress=lambda done, total, path: self.events.put(("upload_progress", done, total, path.name)),
+                    cancel=self.cancel_event,
+                )
+                self.events.put(("upload_done", results))
+            except Exception as exc:
+                logger.exception("Envoi Drive")
+                self.events.put(("upload_done", [{"path": p, "status": "error", "message": str(exc)} for p in outputs]))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_upload_done(self, results: List[dict]):
+        lines, warn, folder = self.pending_summary
+        self.processing = False
+        self.apply_processing_state()
+        sent = [r for r in results if r["status"] == "ok"]
+        failed = [r for r in results if r["status"] == "error"]
+        self.set_status(t("gd_status_done", ok=len(sent), total=len(results)))
+        self.progress_value.set(100)
+        lines.append(t("gd_summary_ok", ok=len(sent), total=len(results), folder=folder))
+        if failed:
+            warn = True
+            lines.append(t("gd_summary_errors", count=len(failed)))
+            lines.extend(f"  • {r['path'].name} : {r['message']}" for r in failed[:MAX_ERRORS_SHOWN])
+            if len(failed) > MAX_ERRORS_SHOWN:
+                lines.append(t("summary_more", count=len(failed) - MAX_ERRORS_SHOWN))
+            lines.append(t("summary_log", log=str(LOG_PATH)))
+        self.show_summary(lines, warn)
+        self.refresh_gdrive_status()
 
     def change_theme(self, index: int):
         if not 0 <= index < len(THEME_CHOICES) or THEME_CHOICES[index] == self.config.get("theme", "auto"):
@@ -637,6 +773,8 @@ class PhotoSplitterGUI:
         cfg["jpeg_quality"] = _var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
+        cfg["gdrive_enabled"] = bool(self.gdrive_enabled.get())
+        cfg["gdrive_folder"] = self.gdrive_folder.get().strip() or "RKarrousel"
         cfg["language"] = i18n.get_language()
         cfg.setdefault("theme", "auto")
         return cfg
@@ -715,6 +853,7 @@ class PhotoSplitterGUI:
 
         config = dict(self.collect_config())
         save_config(CONFIG_PATH, self.config)
+        self.batch_config = config
         files = self.selected_files()
         if not files:
             self.set_status(t("status_no_image"))
@@ -764,6 +903,20 @@ class PhotoSplitterGUI:
                     self.set_status(t("status_progress", done=done, total=total, name=name))
                 elif kind == "finished":
                     self.on_batch_finished(event[1])
+                elif kind == "upload_progress":
+                    _, done, total, name = event
+                    self.progress_value.set(100 * done / max(total, 1))
+                    self.set_status(t("gd_status_uploading", done=done, total=total, name=name))
+                elif kind == "upload_done":
+                    self.on_upload_done(event[1])
+                elif kind == "gd_connected":
+                    self.gdrive_connect_btn.state(["!disabled"])
+                    self.refresh_gdrive_status()
+                    self.set_status(t("gd_connected_msg"))
+                elif kind == "gd_error":
+                    self.gdrive_connect_btn.state(["!disabled"])
+                    self.refresh_gdrive_status()
+                    messagebox.showerror(t("dlg_error"), t("gd_error", message=event[1]))
                 elif kind == "crashed":
                     self.processing = False
                     self.apply_processing_state()
@@ -776,6 +929,7 @@ class PhotoSplitterGUI:
     def on_batch_finished(self, results: List[FileResult]):
         self.processing = False
         self.apply_processing_state()
+        self.pending_summary = ([], False, "")
         results = [r for r in results if r.status != "excluded"]
         ok = [r for r in results if r.status == "ok"]
         skipped = [r for r in results if r.status == "skipped"]
@@ -804,11 +958,21 @@ class PhotoSplitterGUI:
         if errors:
             lines.append(t("summary_log", log=str(LOG_PATH)))
 
+        warn = bool(errors or skipped)
+        if self.batch_config.get("gdrive_enabled") and not cancelled:
+            generated = sorted((p for r in ok for p in r.outputs), key=lambda p: p.name)
+            client = self.drive_client()
+            if generated and client is not None and client.is_connected():
+                self.start_drive_upload(generated, self.batch_config, lines, warn)
+                return  # la boîte de fin s'affiche quand l'envoi est terminé
+            if generated:
+                lines.append(t("gd_skip"))
+                warn = True
+        self.show_summary(lines, warn)
+
+    def show_summary(self, lines: List[str], warn: bool):
         text = "\n".join(lines)
-        if errors or skipped:
-            messagebox.showwarning(t("dlg_done_title"), text)
-        else:
-            messagebox.showinfo(t("dlg_done_title"), text)
+        (messagebox.showwarning if warn else messagebox.showinfo)(t("dlg_done_title"), text)
 
 
 def create_root():

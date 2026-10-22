@@ -44,6 +44,7 @@ DEFAULT_NUMBER_FILES = True
 PATH_CONFIG_KEYS = ("last_source_dir", "last_dest_dir", "signature_path")
 LOG_FILE_NAME = "image_splitter.log"
 LOG_PATH = APP_DIR / LOG_FILE_NAME
+GDRIVE_TOKEN_PATH = APP_DIR / "gdrive_token.json"  # jeton Google Drive, à côté de l'exécutable
 
 logger = logging.getLogger("imagesplitter")
 
