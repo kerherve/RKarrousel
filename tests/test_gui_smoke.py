@@ -1,3 +1,4 @@
+import gc
 import json
 import sys
 import tempfile
@@ -32,6 +33,8 @@ class GuiBuildTests(unittest.TestCase):
     def tearDown(self):
         self.root.destroy()
         self.tmp.cleanup()
+        self.app = self.root = None  # libération dans le thread principal (voir test_gui_flow)
+        gc.collect()
 
     def test_builds_and_collects_config(self):
         self.root.update()

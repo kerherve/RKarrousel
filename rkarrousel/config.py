@@ -18,6 +18,8 @@ DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)
 DEFAULT_BACKGROUND_COLOR_HEX = "#000000"
 DEFAULT_CROP_OFFSET = 0.5
+COLOR_MODES = ("fixed", "dominant", "light", "dark")  # couleur fixe, ou tirée de la photo (dominante / claire / sombre)
+DEFAULT_COLOR_MODE = "fixed"
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
 DEFAULT_SIGNATURE_POSITION = "bottom-right"
@@ -96,6 +98,12 @@ def _number(config: dict, key: str, default: float, low: float, high: float) -> 
 
 def border_color_of(config: dict) -> Tuple[int, int, int]:
     return parse_color(config.get("border_color"), DEFAULT_BORDER_COLOR)
+
+
+def color_mode_of(config: dict, key: str) -> str:
+    """Mode de la couleur du cadre (`border_color_mode`) ou du fond uni (`background_color_mode`)."""
+    mode = config.get(key, DEFAULT_COLOR_MODE)
+    return mode if mode in COLOR_MODES else DEFAULT_COLOR_MODE
 
 
 def background_color_of(config: dict) -> Tuple[int, int, int]:

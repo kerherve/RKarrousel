@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageTk
 
 from rkarrousel.i18n import t
+from rkarrousel.imaging.colors import resolve_photo_colors
 from rkarrousel.config import crop_offset_for, frame_ratio_of
 from rkarrousel.formats import crop_box_for, output_format_of
 from rkarrousel.imaging.canvases import render_crop_3_4
@@ -36,6 +37,7 @@ class CropEditor(tk.Toplevel):
         img = open_image(source).convert("RGB")
         img.thumbnail((WORK_SIDE, WORK_SIDE), Image.Resampling.LANCZOS)
         self.work = img
+        self.render_config = resolve_photo_colors(img, self.config_snapshot)  # cadre « couleur de la photo » compris
         self.photo: Optional[ImageTk.PhotoImage] = None
         self.preview_photo: Optional[ImageTk.PhotoImage] = None
         self.grab_dy = 0.0
@@ -159,7 +161,7 @@ class CropEditor(tk.Toplevel):
             canvas.create_rectangle(pos + rw, 0, self.view_w, self.view_h, **shade)
             canvas.create_rectangle(pos, 1, pos + rw, self.view_h - 1, outline="#ffb400", width=3)
 
-        result = render_crop_3_4(self.work, self.config_snapshot, self.offset)
+        result = render_crop_3_4(self.work, self.render_config, self.offset)
         result.thumbnail((self.preview_w, self.preview_h), Image.Resampling.LANCZOS)
         self.preview_photo = ImageTk.PhotoImage(result)
         self.preview.delete("all")

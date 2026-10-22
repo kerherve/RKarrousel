@@ -12,6 +12,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from rkarrousel.i18n import kind_label, t
+from rkarrousel.imaging.colors import resolve_photo_colors_for_path
 from rkarrousel.config import background_color_of, border_color_of
 from rkarrousel.imaging.frames import measure_border
 from rkarrousel.outputs import render_output
@@ -113,9 +114,8 @@ class ImageViewer(tk.Toplevel):
     def _describe(self) -> None:
         assert self.image is not None
         width, height = self.image.size
-        border = measure_border(
-            self.image, border_color_of(self.config_snapshot), skip_color=background_color_of(self.config_snapshot)
-        )
+        config = resolve_photo_colors_for_path(self.source, self.config_snapshot)  # couleurs « de la photo » comprises
+        border = measure_border(self.image, border_color_of(config), skip_color=background_color_of(config))
         if border:
             percent = 100 * border / min(width, height)
             self.info.set(t("viewer_info", width=width, height=height, border=border, percent=percent))

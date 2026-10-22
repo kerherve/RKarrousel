@@ -1,7 +1,7 @@
 """Widgets réutilisables : zone défilante et sélecteur de couleur."""
 import tkinter as tk
 from tkinter import colorchooser, ttk
-from typing import Callable, Tuple
+from typing import Callable, Sequence, Tuple
 
 from rkarrousel.config import parse_color
 from rkarrousel.i18n import t
@@ -74,3 +74,33 @@ class ColorPicker(ttk.Frame):
         state = ["!disabled"] if enabled else ["disabled"]
         self.entry.state(state)
         self.button.state(state)
+
+
+class ChoiceBox(ttk.Combobox):
+    """Liste déroulante liée à une variable : elle affiche le libellé de la valeur courante, y compris quand la
+    variable change autrement (par exemple quand on applique un préréglage)."""
+
+    def __init__(self, parent: tk.Misc, variable: tk.Variable, values: Sequence, labels: Sequence[str], width: int = 20):
+        super().__init__(parent, state="readonly", width=width, values=list(labels))
+        self.variable, self.choices = variable, list(values)
+        self.bind("<<ComboboxSelected>>", lambda e: variable.set(self.choices[self.current()]))
+        bind_trace(self, variable, self.refresh)
+        self.refresh()
+
+    def refresh(self) -> None:
+        try:
+            value = self.variable.get()
+        except tk.TclError:
+            value = None
+        try:
+            self.current(self.choices.index(value) if value in self.choices else 0)
+        except tk.TclError:
+            pass
+
+
+class HintLabel(ttk.Label):
+    """Texte d'aide discret qui se replie sur la largeur réellement disponible (au lieu d'être coupé à droite)."""
+
+    def __init__(self, parent: tk.Misc, text: str):
+        super().__init__(parent, text=text, style="Hint.TLabel", justify=tk.LEFT)
+        self.bind("<Configure>", lambda e: self.configure(wraplength=max(120, e.width - 4)))

@@ -1,4 +1,5 @@
 """Parcours complets de l'interface (ajout de photos, traitement, Drive, mises à jour) contre de faux serveurs locaux."""
+import gc
 import json
 import sys
 import tempfile
@@ -47,6 +48,10 @@ class GuiFlowTests(unittest.TestCase):
     def tearDown(self):
         self.root.destroy()
         self.tmp.cleanup()
+        # Les variables Tk d'une fenêtre détruite doivent être libérées ICI (thread principal) : sinon le ramasse-miettes
+        # le fait dans un thread de travail, où Tk bloque. Sans objet dans l'appli, qui n'a qu'une fenêtre.
+        self.app = self.root = None
+        gc.collect()
 
     def pump(self, until, seconds=20):
         end = time.time() + seconds
@@ -55,7 +60,10 @@ class GuiFlowTests(unittest.TestCase):
             self.app.ctx.bus.dispatch_pending()
             time.sleep(0.02)
         self.root.update()
-        self.assertTrue(until(), "condition non atteinte à temps")
+        import threading
+
+        state = f"processing={self.app.ctx.processing} dialogues={self.dialogs} threads={[th.name for th in threading.enumerate()]}"
+        self.assertTrue(until(), "condition non atteinte à temps : " + state)
 
     def run_batch(self):
         self.app.batch.start()
@@ -205,6 +213,86 @@ class GuiFlowTests(unittest.TestCase):
         self.assertTrue(window.crop_btn.instate(["disabled"]))
         window.select(crop_index)
         self.assertTrue(window.crop_btn.instate(["!disabled"]))
+
+    # ------------------------------------------------------------------ préréglages et couleurs de la photo
+    def preset_group(self):
+        return self.app.settings_tab.presets
+
+    def select_preset(self, preset_id):
+        group = self.preset_group()
+        group.box.current([p.id for p in group.entries].index(preset_id))
+        group.apply_selected()
+
+    def test_choosing_a_builtin_preset_sets_the_fields_and_the_dropdowns(self):
+        model = self.app.model
+        model.output_format.set("9:16")  # hors préréglage : ne doit pas bouger
+        self.select_preset("no_frame")
+        self.assertTrue(model.no_frame.get())
+        self.assertEqual(model.landscape_fill_mode.get(), "blur")
+        self.assertEqual(model.output_format.get(), "9:16")
+        self.assertTrue(self.app.settings_tab.frame.spin.instate(["disabled"]))
+        self.select_preset("photo_color")
+        self.assertFalse(model.no_frame.get())
+        self.assertEqual((model.border_color_mode.get(), model.background_color_mode.get()), ("light", "dark"))
+        self.assertEqual(self.app.settings_tab.frame.mode.get(), "Photo, version claire")  # la liste affiche la valeur
+
+    def test_saving_reapplying_and_deleting_a_user_preset(self):
+        model, group = self.app.model, self.preset_group()
+        model.frame_percent.set(3.5)
+        model.output_format.set("4:5")
+        model.output_width.set(1080)
+        with mock.patch("tkinter.simpledialog.askstring", return_value="  Mon   style "):
+            group.save()
+        self.assertEqual(group.box.get(), "Mon style")
+        saved = json.loads((self.dir / "config.json").read_text())["presets"]["Mon style"]
+        self.assertEqual((saved["frame_ratio"], saved["output_format"], saved["output_width"]), (0.035, "4:5", 1080))
+        self.assertNotIn("language", saved)
+
+        model.frame_percent.set(1.0)
+        model.output_format.set("3:4")
+        model.output_width.set(0)
+        self.select_preset("Mon style")
+        self.assertEqual((model.frame_percent.get(), model.output_format.get(), model.output_width.get()), (3.5, "4:5", 1080))
+        self.assertEqual(self.app.settings_tab.output.format_box.get(), "4:5 · Feed Instagram")
+
+        with mock.patch("tkinter.messagebox.askyesno", return_value=True):
+            group.delete()
+        self.assertNotIn("Mon style", [p.id for p in group.entries])
+        self.assertNotIn("Mon style", json.loads((self.dir / "config.json").read_text()).get("presets", {}))
+
+    def test_builtin_presets_cannot_be_deleted_and_overwriting_asks_first(self):
+        group = self.preset_group()
+        group.box.current(0)
+        group.apply_selected()
+        self.assertTrue(group.delete_button.instate(["disabled"]))
+        with mock.patch("tkinter.simpledialog.askstring", return_value="Perso"):
+            group.save()
+        with mock.patch("tkinter.simpledialog.askstring", return_value="Perso"), \
+                mock.patch("tkinter.messagebox.askyesno", return_value=False) as ask:
+            self.app.model.frame_percent.set(9.0)
+            group.save()
+        self.assertTrue(ask.called)
+        self.assertNotEqual(self.app.config["presets"]["Perso"]["frame_ratio"], 0.09)  # refusé : inchangé
+
+    def test_a_photo_colour_mode_replaces_the_colour_picker(self):
+        frame = self.app.settings_tab.frame
+        self.app.model.border_color_mode.set("fixed")
+        self.assertTrue(frame.color.entry.instate(["!disabled"]))
+        self.app.model.border_color_mode.set("dominant")
+        self.assertTrue(frame.color.entry.instate(["disabled"]))
+
+    def test_processing_with_a_photo_coloured_frame(self):
+        from PIL import Image
+
+        red = make_image(self.dir, "r_red.jpg", (900, 1200), (200, 30, 30))
+        blue = make_image(self.dir, "s_blue.jpg", (900, 1200), (30, 40, 200))
+        self.app.model.border_color_mode.set("dominant")
+        self.app.files_tab.add_paths([str(red), str(blue)])
+        self.run_batch()
+        a = Image.open(self.out / "01_r_red_framed.jpg").convert("RGB")
+        b = Image.open(self.out / "02_s_blue_framed.jpg").convert("RGB")
+        self.assertGreater(a.getpixel((2, a.height // 2))[0], 150)
+        self.assertGreater(b.getpixel((2, b.height // 2))[2], 150)
 
 
 if __name__ == "__main__":

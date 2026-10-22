@@ -17,6 +17,14 @@ Réglages → Fichiers générés, choisissez le format (**3:4** grille, **4:5**
 découpage, recadrage et fonds s'adaptent) et la largeur (**1080 px** = taille idéale pour Instagram, fichiers bien plus
 légers ; jamais d'agrandissement). Les fichiers de recadrage portent le format dans leur nom (`_crop34`, `_crop45`…).
 
+**Préréglages.** En haut de l'onglet Réglages, un préréglage mémorise le cadre, le fond, la signature, le format et la
+taille des images. Quatre sont fournis (classique, fond noir, couleurs de la photo, sans cadre) ; « Enregistrer sous… »
+garde vos réglages actuels sous le nom de votre choix, et on les rappelle d'un clic.
+
+**Couleur tirée de la photo.** La couleur du cadre et celle du fond uni peuvent être fixes ou calculées pour chaque photo :
+couleur dominante, version claire ou version sombre. Un lot de photos de teintes différentes donne donc des cadres
+assortis à chacune.
+
 **Tous les formats de photo sont acceptés.** Le recadrage se règle verticalement pour une photo plus étroite que le 3/4, et
 horizontalement pour une photo plus large. Chaque type d'image se décoche dans les Réglages ou s'exclut photo par photo.
 

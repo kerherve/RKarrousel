@@ -11,6 +11,7 @@ from rkarrousel.gui.settings_groups import (
     FrameGroup,
     KindsGroup,
     OutputGroup,
+    PresetsGroup,
     SignatureGroup,
     UpdateGroup,
 )
@@ -30,6 +31,7 @@ class SettingsTab(ttk.Frame):
         super().__init__(parent)
         inner = make_scrollable(self, ctx.theme.surface_color())
         inner.columnconfigure(0, weight=1)
+        self.presets = PresetsGroup(inner, ctx)
         self.appearance = AppearanceGroup(inner, ctx, on_language, on_theme)
         self.frame = FrameGroup(inner, ctx)
         self.fill = FillGroup(inner, ctx)
@@ -38,6 +40,6 @@ class SettingsTab(ttk.Frame):
         self.kinds = KindsGroup(inner, ctx)
         self.drive = DriveGroup(inner, ctx, drive)
         self.updates = UpdateGroup(inner, ctx, on_check_updates)
-        groups = (self.appearance, self.frame, self.fill, self.signature, self.output, self.kinds, self.drive, self.updates)
+        groups = (self.presets, self.appearance, self.frame, self.fill, self.signature, self.output, self.kinds, self.drive, self.updates)
         for row, group in enumerate(groups):
             group.grid(row=row, column=0, sticky=tk.EW, pady=(0, 0 if row == len(groups) - 1 else 8))

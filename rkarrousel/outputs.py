@@ -14,6 +14,7 @@ from rkarrousel.formats import (
     panorama_parts,
 )
 from rkarrousel.imaging.canvases import render_crop_3_4, render_portrait_2_3, render_portrait_3_4
+from rkarrousel.imaging.colors import resolve_photo_colors
 from rkarrousel.imaging.frames import open_image
 from rkarrousel.imaging.panorama import iter_landscape_other, iter_split_2_3_to_3_4
 from rkarrousel.kinds import KIND_CROP, OPTIONAL_KINDS
@@ -60,6 +61,7 @@ def iter_outputs(
     wanted = [k for k in kinds_for_ratio(ratio_type, config, img.size) if only is None or k in only]
     if not wanted:
         return
+    config = resolve_photo_colors(img, config)  # cadre / fond « couleur de la photo » : calculés pour CETTE photo
     if ratio_type == "portrait_3_4":
         yield "framed", render_portrait_3_4(img, config)
     elif ratio_type in ("portrait_2_3", "portrait_other", "square"):

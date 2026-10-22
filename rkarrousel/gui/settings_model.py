@@ -4,6 +4,7 @@ from typing import Dict
 
 from rkarrousel import i18n
 from rkarrousel.config import (
+    COLOR_MODES,
     DEFAULT_BACKGROUND_COLOR_HEX,
     DEFAULT_BLUR_STRENGTH,
     DEFAULT_BORDER_COLOR_HEX,
@@ -40,8 +41,10 @@ class SettingsModel:
         self.frame_percent = tk.DoubleVar(value=round(float(cfg.get("frame_ratio", DEFAULT_FRAME_RATIO)) * 100, 2))
         self.no_frame = tk.BooleanVar(value=cfg.get("frame_enabled", True) is False)
         self.border_color = tk.StringVar(value=cfg.get("border_color", DEFAULT_BORDER_COLOR_HEX))
+        self.border_color_mode = tk.StringVar(value=cfg.get("border_color_mode", "fixed"))
         self.landscape_fill_mode = tk.StringVar(value=cfg.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE))
         self.background_color = tk.StringVar(value=cfg.get("background_color", DEFAULT_BACKGROUND_COLOR_HEX))
+        self.background_color_mode = tk.StringVar(value=cfg.get("background_color_mode", "fixed"))
         self.blur_strength = tk.DoubleVar(value=cfg.get("blur_strength", DEFAULT_BLUR_STRENGTH))
         self.signature_path = tk.StringVar(value=cfg.get("signature_path", ""))
         self.signature_position = tk.StringVar(value=cfg.get("signature_position", DEFAULT_SIGNATURE_POSITION))
@@ -55,6 +58,41 @@ class SettingsModel:
         self.gdrive_folder = tk.StringVar(value=cfg.get("gdrive_folder", "RKarrousel"))
         self.update_check = tk.BooleanVar(value=bool(cfg.get("update_check", True)))
 
+    @staticmethod
+    def _mode(var: tk.StringVar) -> str:
+        return var.get() if var.get() in COLOR_MODES else "fixed"
+
+    def apply(self, values: dict) -> None:
+        """Applique un préréglage (ou toute série de réglages) aux champs de l'écran : seules les clés citées changent."""
+        text_vars = {
+            "border_color": self.border_color, "border_color_mode": self.border_color_mode,
+            "landscape_fill_mode": self.landscape_fill_mode, "background_color": self.background_color,
+            "background_color_mode": self.background_color_mode, "signature_path": self.signature_path,
+            "signature_position": self.signature_position, "output_format": self.output_format,
+        }
+        for key, var in text_vars.items():
+            if key in values:
+                var.set(str(values[key]))
+        converters = (
+            ("frame_ratio", self.frame_percent, lambda v: round(float(v) * 100, 2)),
+            ("blur_strength", self.blur_strength, float),
+            ("signature_scale", self.signature_scale, float),
+            ("jpeg_quality", self.jpeg_quality, int),
+            ("output_width", self.output_width, int),
+        )
+        for key, var, convert in converters:
+            if key in values:
+                try:
+                    var.set(convert(values[key]))
+                except (TypeError, ValueError):
+                    pass  # valeur illisible : on garde le réglage actuel
+        if "frame_enabled" in values:
+            self.no_frame.set(values["frame_enabled"] is False)
+        if "disabled_kinds" in values:
+            disabled = {str(kind) for kind in values["disabled_kinds"] or ()}
+            for kind, var in self.kind_vars.items():
+                var.set(kind not in disabled)
+
     def collect(self, cfg: dict) -> dict:
         """Recopie les réglages de l'écran dans `cfg` et renvoie `cfg`."""
         cfg["last_source_dir"] = self.source_dir.get()
@@ -67,7 +105,9 @@ class SettingsModel:
         cfg["signature_path"] = self.signature_path.get()
         cfg["number_files"] = bool(self.number_files.get())
         cfg["border_color"] = self.border_color.get()
+        cfg["border_color_mode"] = self._mode(self.border_color_mode)
         cfg["background_color"] = self.background_color.get()
+        cfg["background_color_mode"] = self._mode(self.background_color_mode)
         cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()]
         cfg["blur_strength"] = var_value(self.blur_strength, DEFAULT_BLUR_STRENGTH)
         cfg["jpeg_quality"] = var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
