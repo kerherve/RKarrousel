@@ -8,11 +8,12 @@ import tkinter as tk
 from tkinter import ttk
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from PIL import Image, ImageTk
 
 from i18n import kind_label, t
+from image_viewer import ImageViewer
 from utils import item_key, merge_order, planned_items, render_outputs
 
 COLUMNS = 3
@@ -30,6 +31,8 @@ RENDER_KEYS = (
     "blur_strength",
     "signature_position",
     "signature_scale",
+    "background_color",
+    "disabled_kinds",
 )
 
 
@@ -46,6 +49,7 @@ class Tile:
     thumb: Optional[Image.Image] = None
     photo: Optional[ImageTk.PhotoImage] = None
     error: str = ""
+    excluded: bool = False
 
 
 class OrderWindow(tk.Toplevel):
@@ -56,9 +60,10 @@ class OrderWindow(tk.Toplevel):
         config: dict,
         order: Sequence[str],
         cache: Dict[str, Tuple[str, Image.Image]],
-        on_change: Callable[[List[str]], None],
+        on_change: Callable[[List[str], Set[str]], None],
         get_config: Callable[[], dict],
         dark: bool = False,
+        excluded: Optional[Set[str]] = None,
     ):
         super().__init__(parent)
         scale = max(1.0, self.winfo_fpixels("1i") / 96)
@@ -73,6 +78,8 @@ class OrderWindow(tk.Toplevel):
         self.config_snapshot = dict(config)
         self.cache = cache  # key -> (empreinte, miniature), partagé entre ouvertures
         self.on_change = on_change
+        self.excluded: Set[str] = set(excluded or ())
+        self.selected: Optional[int] = None
         self.get_config = get_config
 
         self.tiles: List[Tile] = []
@@ -102,6 +109,11 @@ class OrderWindow(tk.Toplevel):
         ttk.Button(toolbar, text=t("order_refresh"), command=self.refresh).pack(side=tk.LEFT)
         ttk.Button(toolbar, text=t("order_reset"), command=self.reset_order).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(toolbar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
+        self.exclude_btn = ttk.Button(toolbar, text=t("order_exclude"), command=self.toggle_exclude)
+        self.exclude_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self.view_btn = ttk.Button(toolbar, text=t("order_view"), command=self.view_selected)
+        self.view_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self._update_buttons()
 
         self.hint = ttk.Label(root_frame, text=t("order_hint"), justify=tk.LEFT, wraplength=canvas_width)
         self.hint.pack(fill=tk.X)
@@ -120,6 +132,13 @@ class OrderWindow(tk.Toplevel):
         self.canvas.bind("<B1-Motion>", self._on_motion)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<MouseWheel>", self._on_wheel)
+        self.canvas.bind("<Double-Button-1>", self._on_double_click)
+        self.canvas.bind("<ButtonPress-3>", self._on_context)
+        self.bind("<Delete>", lambda e: self.toggle_exclude())
+        self.bind("<Return>", lambda e: self.view_selected())
+        self.menu = tk.Menu(self, tearoff=0)
+        self.menu.add_command(label=t("order_view"), command=self.view_selected)
+        self.menu.add_command(label=t("order_exclude"), command=self.toggle_exclude)
         self.canvas.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-2, "units"))
         self.canvas.bind("<Button-5>", lambda e: self.canvas.yview_scroll(2, "units"))
 
@@ -136,14 +155,16 @@ class OrderWindow(tk.Toplevel):
         pending: Dict[Path, List[str]] = {}
         for key in ordered_keys:
             path, kind = by_key[key]
-            tile = Tile(key, path, kind)
+            tile = Tile(key, path, kind, excluded=key in self.excluded)
             cached = self.cache.get(self._cache_key(key, path))
             if cached and cached[0] == signature:
                 self._set_thumb(tile, cached[1])
             else:
                 pending.setdefault(path, []).append(key)
             self.tiles.append(tile)
-        self.on_change([tile.key for tile in self.tiles])
+        self.excluded &= {tile.key for tile in self.tiles}
+        self.selected = None
+        self._notify()
         self.redraw()
         self._update_status()
 
@@ -155,6 +176,9 @@ class OrderWindow(tk.Toplevel):
                 daemon=True,
             )
             self.worker.start()
+
+    def _notify(self) -> None:
+        self.on_change([tile.key for tile in self.tiles], set(self.excluded))
 
     def _cache_key(self, key: str, path: Path) -> str:
         try:
@@ -218,9 +242,62 @@ class OrderWindow(tk.Toplevel):
         if ready < len(self.tiles) and not any(tile.error for tile in self.tiles if tile.thumb is None):
             self.status.set(t("order_rendering", done=ready, total=len(self.tiles)))
         else:
-            self.status.set(t("order_count", total=len(self.tiles)))
+            excluded = sum(1 for tile in self.tiles if tile.excluded)
+            if excluded:
+                self.status.set(t("order_count_excluded", total=len(self.tiles), excluded=excluded))
+            else:
+                self.status.set(t("order_count", total=len(self.tiles)))
 
     # ------------------------------------------------------------------ actions
+    def _selected_tile(self) -> Optional[Tile]:
+        if self.selected is not None and 0 <= self.selected < len(self.tiles):
+            return self.tiles[self.selected]
+        return None
+
+    def _update_buttons(self) -> None:
+        tile = self._selected_tile()
+        state = ["!disabled"] if tile else ["disabled"]
+        self.view_btn.state(state)
+        self.exclude_btn.state(state)
+        self.exclude_btn.configure(text=t("order_restore") if tile and tile.excluded else t("order_exclude"))
+        if hasattr(self, "menu"):
+            self.menu.entryconfigure(1, label=t("order_restore") if tile and tile.excluded else t("order_exclude"))
+
+    def select(self, index: Optional[int]) -> None:
+        self.selected = index
+        self._update_buttons()
+        self.redraw()
+
+    def toggle_exclude(self) -> None:
+        tile = self._selected_tile()
+        if tile is None:
+            return
+        tile.excluded = not tile.excluded
+        (self.excluded.add if tile.excluded else self.excluded.discard)(tile.key)
+        self._notify()
+        self._update_buttons()
+        self._update_status()
+        self.redraw()
+
+    def view_selected(self) -> None:
+        tile = self._selected_tile()
+        if tile is None:
+            return
+        ImageViewer(self, tile.source, tile.kind, self.config_snapshot, dark=self.dark)
+
+    def _on_double_click(self, event) -> None:
+        index = self._tile_at(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
+        if index is not None:
+            self.select(index)
+            self.view_selected()
+
+    def _on_context(self, event) -> None:
+        index = self._tile_at(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
+        if index is None:
+            return
+        self.select(index)
+        self.menu.tk_popup(event.x_root, event.y_root)
+
     def refresh(self) -> None:
         self.config_snapshot = dict(self.get_config())
         self.start([tile.key for tile in self.tiles])
@@ -241,14 +318,17 @@ class OrderWindow(tk.Toplevel):
     def redraw(self) -> None:
         canvas = self.canvas
         canvas.delete("all")
+        number = 0
         for index, tile in enumerate(self.tiles):
+            if not tile.excluded:
+                number += 1
             x, y = self._slot_origin(index)
-            self._draw_tile(tile, index, x, y)
+            self._draw_tile(tile, index, x, y, number)
         rows = (len(self.tiles) + COLUMNS - 1) // COLUMNS
         height = self.GAP + rows * (self.TILE_H + self.GAP)
         canvas.configure(scrollregion=(0, 0, COLUMNS * self.TILE_W + (COLUMNS + 1) * self.GAP, max(height, 1)))
 
-    def _draw_tile(self, tile: Tile, index: int, x: int, y: int) -> None:
+    def _draw_tile(self, tile: Tile, index: int, x: int, y: int, number: int) -> None:
         canvas = self.canvas
         dragging = self.drag is not None and self.drag.get("moved") and self.drag["index"] == index
         canvas.create_rectangle(x, y, x + self.TILE_W, y + self.TILE_H, fill="#1e1e1e" if not self.dark else "#161616", outline="")
@@ -264,11 +344,28 @@ class OrderWindow(tk.Toplevel):
         else:
             canvas.create_text(x + self.TILE_W // 2, y + self.TILE_H // 2, text="…", fill="#777777", font=("Segoe UI", 20))
 
-        # numéro d'ordre (celui qui préfixera le fichier)
         s = self.scale
+        if tile.excluded:
+            canvas.create_rectangle(x, y, x + self.TILE_W, y + self.TILE_H, fill="#000000", stipple="gray75", outline="")
+            canvas.create_text(
+                x + self.TILE_W // 2, y + self.TILE_H // 2 - int(14 * s), text="✕", fill="#ff5a5a", font=("Segoe UI", 44, "bold")
+            )
+            canvas.create_text(
+                x + self.TILE_W // 2, y + self.TILE_H // 2 + int(26 * s), text=t("order_excluded"), fill="#ffffff",
+                font=("Segoe UI", 10, "bold"),
+            )
+        # numéro d'ordre (celui qui préfixera le fichier) ; les images exclues ne sont pas numérotées
         m, d = int(8 * s), int(30 * s)
-        canvas.create_oval(x + m, y + m, x + m + d, y + m + d, fill="#0095f6", outline="#ffffff", width=2)
-        canvas.create_text(x + m + d // 2, y + m + d // 2, text=str(index + 1), fill="#ffffff", font=("Segoe UI", 10, "bold"))
+        badge = "#6b6b6b" if tile.excluded else "#0095f6"
+        canvas.create_oval(x + m, y + m, x + m + d, y + m + d, fill=badge, outline="#ffffff", width=2)
+        canvas.create_text(
+            x + m + d // 2, y + m + d // 2, text="–" if tile.excluded else str(number), fill="#ffffff",
+            font=("Segoe UI", 10, "bold"),
+        )
+        if index == self.selected:
+            canvas.create_rectangle(
+                x + 2, y + 2, x + self.TILE_W - 2, y + self.TILE_H - 2, outline="#0095f6", width=max(3, int(4 * s))
+            )
         # légende
         cap = int(36 * s)
         canvas.create_rectangle(x, y + self.TILE_H - cap, x + self.TILE_W, y + self.TILE_H, fill="#000000", stipple="gray50", outline="")
@@ -328,13 +425,17 @@ class OrderWindow(tk.Toplevel):
 
     def _on_release(self, event) -> None:
         drag, self.drag = self.drag, None
-        if not drag or not drag["moved"]:
+        if not drag:
+            return
+        if not drag["moved"]:
+            self.select(drag["index"])
             return
         source, target = drag["index"], drag.get("target", drag["index"])
         if source != target:
             tile = self.tiles.pop(source)
             self.tiles.insert(target, tile)
-            self.on_change([tile.key for tile in self.tiles])
+            self.selected = target
+            self._notify()
         self.redraw()
 
     def _on_wheel(self, event) -> None:

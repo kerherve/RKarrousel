@@ -8,15 +8,16 @@ import tkinter as tk
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from PIL import Image, ImageOps, ImageTk
 
 import i18n
-from i18n import t
+from i18n import kind_label, t
 from order_window import OrderWindow
 from utils import (
     CONFIG_PATH,
+    DEFAULT_BACKGROUND_COLOR_HEX,
     DEFAULT_BLUR_STRENGTH,
     DEFAULT_BORDER_COLOR_HEX,
     DEFAULT_FRAME_RATIO,
@@ -26,9 +27,11 @@ from utils import (
     DEFAULT_SIGNATURE_POSITION,
     DEFAULT_SIGNATURE_SCALE,
     LOG_PATH,
+    OPTIONAL_KINDS,
     SIGNATURE_POSITIONS,
     FileResult,
     gather_input_files,
+    disabled_kinds_of,
     load_config,
     parse_color,
     process_batch,
@@ -117,6 +120,7 @@ class PhotoSplitterGUI:
         self.selected_paths: List[str] = []
         self.preview_image = None
         self.order: List[str] = []
+        self.excluded: Set[str] = set()
         self.preview_cache: Dict[str, Tuple[str, Image.Image]] = {}
         self.order_window: Optional[OrderWindow] = None
         self.events: "queue.Queue[tuple]" = queue.Queue()
@@ -131,6 +135,9 @@ class PhotoSplitterGUI:
         self.signature_path = tk.StringVar(value=cfg.get("signature_path", ""))
         self.number_files = tk.BooleanVar(value=cfg.get("number_files", DEFAULT_NUMBER_FILES))
         self.border_color = tk.StringVar(value=cfg.get("border_color", DEFAULT_BORDER_COLOR_HEX))
+        self.background_color = tk.StringVar(value=cfg.get("background_color", DEFAULT_BACKGROUND_COLOR_HEX))
+        disabled = disabled_kinds_of(cfg)
+        self.kind_vars = {kind: tk.BooleanVar(value=kind not in disabled) for kind in OPTIONAL_KINDS}
         self.blur_strength = tk.DoubleVar(value=cfg.get("blur_strength", DEFAULT_BLUR_STRENGTH))
         self.jpeg_quality = tk.IntVar(value=cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
         self.signature_position = tk.StringVar(value=cfg.get("signature_position", DEFAULT_SIGNATURE_POSITION))
@@ -167,7 +174,7 @@ class PhotoSplitterGUI:
         """Taille adaptée à l'écran (échelle Windows comprise) et fenêtre centrée, barre des tâches exclue."""
         screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         width = min(int(1120 * self.scale), screen_w - 40)
-        height = min(int(700 * self.scale), screen_h - 140)
+        height = min(int(760 * self.scale), screen_h - 140)
         x = max(0, (screen_w - width) // 2)
         y = max(0, (screen_h - height) // 2 - 30)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
@@ -288,7 +295,7 @@ class PhotoSplitterGUI:
         tab.columnconfigure(0, weight=1)
 
         frame_group = ttk.LabelFrame(tab, text=t("frame_group"), padding=12)
-        frame_group.grid(row=0, column=0, sticky=tk.EW, pady=(0, 12))
+        frame_group.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Label(frame_group, text=t("frame_ratio")).grid(row=0, column=0, sticky=tk.W)
         ttk.Spinbox(frame_group, from_=0.01, to=0.2, increment=0.01, textvariable=self.frame_ratio, width=8).grid(
             row=0, column=1, padx=8
@@ -305,23 +312,32 @@ class PhotoSplitterGUI:
         self.update_color_swatch()
 
         fill_group = ttk.LabelFrame(tab, text=t("fill_group"), padding=12)
-        fill_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 12))
+        fill_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Radiobutton(fill_group, text=t("fill_black"), value="black", variable=self.landscape_fill_mode).grid(
             row=0, column=0, sticky=tk.W, padx=(0, 16)
         )
         ttk.Radiobutton(fill_group, text=t("fill_blur"), value="blur", variable=self.landscape_fill_mode).grid(
             row=0, column=1, sticky=tk.W
         )
-        ttk.Label(fill_group, text=t("blur_strength")).grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+        ttk.Label(fill_group, text=t("bg_color")).grid(row=1, column=0, sticky=tk.W, padx=(0, 12), pady=(10, 0))
+        bg_row = ttk.Frame(fill_group)
+        bg_row.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
+        self.bg_swatch = tk.Label(bg_row, width=4, relief=tk.SOLID, borderwidth=1)
+        self.bg_swatch.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Entry(bg_row, textvariable=self.background_color, width=10).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(bg_row, text=t("choose_color"), command=self.choose_background_color).pack(side=tk.LEFT)
+        self.background_color.trace_add("write", lambda *_: self.update_color_swatch())
+        self.update_color_swatch()
+        ttk.Label(fill_group, text=t("blur_strength")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
         blur_row = ttk.Frame(fill_group)
-        blur_row.grid(row=1, column=1, sticky=tk.W, pady=(8, 0))
+        blur_row.grid(row=2, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
         ttk.Spinbox(blur_row, from_=0.2, to=5.0, increment=0.1, textvariable=self.blur_strength, width=6).pack(
             side=tk.LEFT, padx=(0, 8)
         )
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
 
         sig_group = ttk.LabelFrame(tab, text=t("signature_group"), padding=12)
-        sig_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 12))
+        sig_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
         sig_group.columnconfigure(0, weight=1)
         sig_row = ttk.Frame(sig_group)
         sig_row.grid(row=0, column=0, columnspan=4, sticky=tk.EW)
@@ -345,12 +361,22 @@ class PhotoSplitterGUI:
         )
 
         output_group = ttk.LabelFrame(tab, text=t("output_group"), padding=12)
-        output_group.grid(row=3, column=0, sticky=tk.EW)
+        output_group.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Label(output_group, text=t("jpeg_quality")).grid(row=0, column=0, sticky=tk.W)
         ttk.Spinbox(output_group, from_=50, to=100, increment=1, textvariable=self.jpeg_quality, width=6).grid(
             row=0, column=1, padx=8
         )
         ttk.Label(output_group, text=t("jpeg_quality_hint")).grid(row=0, column=2, sticky=tk.W)
+
+        kinds_group = ttk.LabelFrame(tab, text=t("kinds_group"), padding=12)
+        kinds_group.grid(row=4, column=0, sticky=tk.EW)
+        for position, kind in enumerate(OPTIONAL_KINDS):
+            ttk.Checkbutton(kinds_group, text=kind_label(kind).capitalize(), variable=self.kind_vars[kind]).grid(
+                row=position // 2, column=position % 2, sticky=tk.W, padx=(0, 24), pady=2
+            )
+        ttk.Label(kinds_group, text=t("kinds_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=(6, 0)
+        )
 
     # ------------------------------------------------------------------ glisser-déposer
     def setup_drop_target(self):
@@ -419,6 +445,7 @@ class PhotoSplitterGUI:
     def clear_selection(self):
         self.selected_paths = []
         self.order = []
+        self.excluded = set()
         self.listbox.delete(*self.listbox.get_children())
         self.preview_image = None
         self.draw_preview_placeholder()
@@ -463,12 +490,23 @@ class PhotoSplitterGUI:
         if picked and picked[1]:
             self.border_color.set(picked[1].upper())
 
+    def choose_background_color(self):
+        rgb = parse_color(self.background_color.get(), (0, 0, 0))
+        picked = colorchooser.askcolor(color="#%02x%02x%02x" % rgb, title=t("bg_color"))
+        if picked and picked[1]:
+            self.background_color.set(picked[1].upper())
+
     def update_color_swatch(self):
-        rgb = parse_color(self.border_color.get())
-        try:
-            self.color_swatch.configure(bg="#%02x%02x%02x" % rgb)
-        except tk.TclError:
-            pass
+        for swatch, var, default in (
+            (getattr(self, "color_swatch", None), self.border_color, (255, 255, 255)),
+            (getattr(self, "bg_swatch", None), self.background_color, (0, 0, 0)),
+        ):
+            if swatch is None:
+                continue
+            try:
+                swatch.configure(bg="#%02x%02x%02x" % parse_color(var.get(), default))
+            except tk.TclError:
+                pass
 
     def refresh_list(self):
         self.listbox.delete(*self.listbox.get_children())
@@ -531,6 +569,8 @@ class PhotoSplitterGUI:
         cfg["signature_path"] = self.signature_path.get()
         cfg["number_files"] = bool(self.number_files.get())
         cfg["border_color"] = self.border_color.get()
+        cfg["background_color"] = self.background_color.get()
+        cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()]
         cfg["blur_strength"] = _var_value(self.blur_strength, DEFAULT_BLUR_STRENGTH)
         cfg["jpeg_quality"] = _var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
         cfg["signature_position"] = self.signature_position.get()
@@ -573,12 +613,14 @@ class PhotoSplitterGUI:
             self.order,
             self.preview_cache,
             dark=self.dark,
+            excluded=self.excluded,
             on_change=self.set_order,
             get_config=lambda: dict(self.collect_config()),
         )
 
-    def set_order(self, order: List[str]):
+    def set_order(self, order: List[str], excluded: Set[str]):
         self.order = list(order)
+        self.excluded = set(excluded)
 
     # ------------------------------------------------------------------ traitement
     def set_status(self, text: str):
@@ -616,14 +658,14 @@ class PhotoSplitterGUI:
         self.set_status(t("status_processing"))
         logger.info("Traitement de %d fichier(s) vers %s", len(files), config["last_dest_dir"])
 
-        thread = threading.Thread(target=self.run_batch, args=(files, config, list(self.order)), daemon=True)
+        thread = threading.Thread(target=self.run_batch, args=(files, config, list(self.order), set(self.excluded)), daemon=True)
         thread.start()
 
     def cancel_processing(self):
         self.cancel_event.set()
         self.set_status(t("status_cancelling"))
 
-    def run_batch(self, files: List[Path], config: dict, order: List[str]):
+    def run_batch(self, files: List[Path], config: dict, order: List[str], excluded: Set[str]):
         """Exécuté dans un thread : ne touche jamais à Tk, tout passe par la file `events`."""
         try:
             results = process_batch(
@@ -635,6 +677,7 @@ class PhotoSplitterGUI:
                 progress=lambda done, total, path: self.events.put(("progress", done, total, path.name)),
                 cancel=self.cancel_event,
                 workers=WORKERS,
+                excluded=excluded,
             )
             self.events.put(("finished", results))
         except Exception as exc:
@@ -664,6 +707,7 @@ class PhotoSplitterGUI:
     def on_batch_finished(self, results: List[FileResult]):
         self.processing = False
         self.apply_processing_state()
+        results = [r for r in results if r.status != "excluded"]
         ok = [r for r in results if r.status == "ok"]
         skipped = [r for r in results if r.status == "skipped"]
         errors = [r for r in results if r.status == "error"]

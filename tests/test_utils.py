@@ -168,6 +168,67 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(sorted(seen), [(1, 3), (2, 3), (3, 3)])
 
 
+class ExclusionAndColorTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.out = self.dir / "out"
+        self.land = make_image(self.dir, "l.jpg", (900, 600))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_excluded_items_are_not_generated_nor_numbered(self):
+        excluded = {utils.item_key(self.land, "part2_with_sig")}
+        utils.process_batch([self.land], self.out, {"frame_ratio": 0.03}, number_files=True, excluded=excluded)
+        self.assertEqual(
+            sorted(p.name for p in self.out.iterdir()),
+            ["01_l_part1.jpg", "02_l_part2.jpg", "03_l_part1_with_sig.jpg"],
+        )
+
+    def test_numbering_skips_excluded_in_the_middle(self):
+        excluded = {utils.item_key(self.land, "part2")}
+        utils.process_batch([self.land], self.out, {"frame_ratio": 0.03}, number_files=True, excluded=excluded)
+        self.assertIn("02_l_part1_with_sig.jpg", {p.name for p in self.out.iterdir()})
+
+    def test_all_excluded_file_is_reported_as_excluded(self):
+        every = {utils.item_key(self.land, k) for k in utils.OPTIONAL_KINDS}
+        (result,) = utils.process_batch([self.land], self.out, {}, excluded=every)
+        self.assertEqual(result.status, "excluded")
+        self.assertFalse(list(self.out.glob("*.jpg")))
+
+    def test_disabled_kinds_are_neither_planned_nor_rendered(self):
+        config = {"disabled_kinds": ["part2_with_sig", "part1"]}
+        self.assertEqual(utils.kinds_for_ratio("landscape_2_3", config), ["part2", "part1_with_sig"])
+        self.assertEqual([k for k, _ in utils.render_outputs(self.land, config)], ["part2", "part1_with_sig"])
+
+    def test_render_output_returns_one_kind_or_none(self):
+        self.assertIsNotNone(utils.render_output(self.land, {}, "part2"))
+        self.assertIsNone(utils.render_output(self.land, {"disabled_kinds": ["part2"]}, "part2"))
+
+    def test_solid_background_color_is_applied(self):
+        config = {"frame_ratio": 0.03, "landscape_fill_mode": "black", "background_color": "#00FF00"}
+        img = utils.render_output(self.land, config, "part1_with_sig")
+        self.assertEqual(img.getpixel((0, 0)), (0, 255, 0))
+
+    def test_default_background_is_still_black(self):
+        img = utils.render_output(self.land, {"frame_ratio": 0.03}, "part1_with_sig")
+        self.assertEqual(img.getpixel((0, 0)), (0, 0, 0))
+
+    def test_measure_border(self):
+        src = make_image(self.dir, "p.jpg", (600, 800))
+        img = utils.render_output(src, {"frame_ratio": 0.05, "border_color": "#FFFFFF"}, "framed")
+        self.assertEqual(utils.measure_border(img, (255, 255, 255)), round(600 * 0.05))
+
+
+    def test_measure_border_skips_a_solid_background(self):
+        config = {"frame_ratio": 0.03, "landscape_fill_mode": "black", "background_color": "#1E3A5F"}
+        img = utils.render_output(self.land, config, "part1_with_sig")
+        measured = utils.measure_border(img, (255, 255, 255), skip_color=utils.background_color_of(config))
+        self.assertGreater(measured, 0)
+        self.assertEqual(utils.measure_border(img, (255, 255, 255)), 0)
+
+
 class ConfigTests(unittest.TestCase):
     def test_parse_color(self):
         self.assertEqual(utils.parse_color("#ff0000"), (255, 0, 0))

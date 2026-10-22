@@ -8,7 +8,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Callable, Collection, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageFilter, ImageOps
 
@@ -30,6 +30,9 @@ LANDSCAPE_FILL_MODES = {"black", "blur"}
 LANDSCAPE_SIGNATURE_SIZE_FACTOR = 1.2
 LANDSCAPE_SIGNATURE_MARGIN_RATIO = 0.03
 DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
+DEFAULT_BACKGROUND_COLOR = (0, 0, 0)
+DEFAULT_BACKGROUND_COLOR_HEX = "#000000"
+OPTIONAL_KINDS = ("part1", "part2", "part1_with_sig", "part2_with_sig")
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
 DEFAULT_SIGNATURE_POSITION = "bottom-right"
@@ -136,6 +139,16 @@ def _number(config: dict, key: str, default: float, low: float, high: float) -> 
 
 def border_color_of(config: dict) -> Tuple[int, int, int]:
     return parse_color(config.get("border_color"), DEFAULT_BORDER_COLOR)
+
+
+def background_color_of(config: dict) -> Tuple[int, int, int]:
+    """Couleur du fond uni (quand le fond flouté n'est pas choisi)."""
+    return parse_color(config.get("background_color"), DEFAULT_BACKGROUND_COLOR)
+
+
+def disabled_kinds_of(config: dict) -> set:
+    value = config.get("disabled_kinds") or []
+    return {str(kind) for kind in value} if isinstance(value, (list, tuple, set)) else set()
 
 
 def blur_strength_of(config: dict) -> float:
@@ -260,7 +273,7 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     portrait_width = max(portrait_width, min_width)
     portrait_height = max(portrait_height, min_height)
 
-    background = Image.new("RGB", (portrait_width, portrait_height), (0, 0, 0))
+    background = Image.new("RGB", (portrait_width, portrait_height), background_color_of(config))
     x_offset = (portrait_width - framed.width) // 2
     y_offset = (portrait_height - framed.height) // 2
     background.paste(framed, (x_offset, y_offset))
@@ -340,9 +353,10 @@ def create_portrait_with_landscape_content(
     border_color=DEFAULT_BORDER_COLOR,
     sig_position: str = DEFAULT_SIGNATURE_POSITION,
     sig_scale: float = DEFAULT_SIGNATURE_SCALE,
+    background_color=DEFAULT_BACKGROUND_COLOR,
 ) -> Image.Image:
     """
-    Crée une image portrait 3/4 avec l'image paysage complète centrée, signée, encadrée et placée sur fond noir.
+    Crée une image portrait 3/4 avec l'image paysage complète centrée, signée, encadrée et placée sur fond uni (noir par défaut).
     """
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -370,7 +384,7 @@ def create_portrait_with_landscape_content(
     signed_scaled = signed.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
     framed = frame_image(signed_scaled, border_px, border_color)
 
-    background = Image.new("RGB", (portrait_width, portrait_height), (0, 0, 0))
+    background = Image.new("RGB", (portrait_width, portrait_height), background_color)
     x_offset = (portrait_width - framed.width) // 2
     y_offset = (portrait_height - framed.height) // 2
     background.paste(framed, (x_offset, y_offset))
@@ -461,7 +475,9 @@ def create_portrait_with_landscape_blur_fill(
     )
 
 
-def iter_split_2_3_to_3_4(img: Image.Image, config: dict) -> Iterator[Tuple[str, Image.Image]]:
+def iter_split_2_3_to_3_4(
+    img: Image.Image, config: dict, only: Optional[Collection[str]] = None
+) -> Iterator[Tuple[str, Image.Image]]:
     """Génère (kind, image) pour un paysage 2/3 : deux moitiés encadrées (panorama)
     puis les deux versions portrait 3/4 de la photo entière."""
     width, height = img.size
@@ -488,9 +504,14 @@ def iter_split_2_3_to_3_4(img: Image.Image, config: dict) -> Iterator[Tuple[str,
     crop_top = (height - target_height) // 2
     left_crop = img.crop((0, crop_top, target_width, crop_top + target_height))
     right_crop = img.crop((target_width, crop_top, width, crop_top + target_height))
+    wanted = set(OPTIONAL_KINDS) if only is None else set(only)
     # apply frame on three sides: top, bottom and outer vertical edge only
-    yield "part1", frame_image_with_outer_edge(left_crop, border_px, "left", color)
-    yield "part2", frame_image_with_outer_edge(right_crop, border_px, "right", color)
+    if "part1" in wanted:
+        yield "part1", frame_image_with_outer_edge(left_crop, border_px, "left", color)
+    if "part2" in wanted:
+        yield "part2", frame_image_with_outer_edge(right_crop, border_px, "right", color)
+    if not wanted & {"part1_with_sig", "part2_with_sig"}:
+        return
 
     sig_path = config.get("signature_path")
     sig_path = Path(sig_path) if sig_path else None
@@ -498,57 +519,69 @@ def iter_split_2_3_to_3_4(img: Image.Image, config: dict) -> Iterator[Tuple[str,
     sig_scale = signature_scale_of(config)
     fill_mode = config.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE)
 
-    if fill_mode == "blur":
-        blur = blur_strength_of(config)
-        left_with_sig = create_portrait_with_landscape_blur_fill(
-            img, sig_path, frame_ratio=frame_ratio, border_color=color, blur_strength=blur, sig_scale=sig_scale
-        )
-        img_rotated = img.transpose(Image.Transpose.ROTATE_270)
-        right_with_sig = create_portrait_with_landscape_blur_fill(
-            img_rotated,
-            sig_path,
-            frame_ratio=frame_ratio,
-            signature_rotation=270,
-            border_color=color,
-            blur_strength=blur,
-            sig_scale=sig_scale,
-        )
-    else:
-        left_with_sig = create_portrait_with_landscape_content(
-            img, sig_path, frame_ratio=frame_ratio, border_color=color, sig_position=position, sig_scale=sig_scale
-        )
-        # Sign the upright photo first, then rotate the signed result as one block
-        # so the signature turns together with the photo instead of staying upright.
-        signed_for_rotation = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
-        img_rotated = signed_for_rotation.transpose(Image.Transpose.ROTATE_270)
-        right_with_sig = create_portrait_with_landscape_content(
-            img_rotated, None, frame_ratio=frame_ratio, border_color=color
-        )
+    blur = blur_strength_of(config)
+    bg = background_color_of(config)
 
-    yield "part1_with_sig", left_with_sig
-    yield "part2_with_sig", right_with_sig
+    if "part1_with_sig" in wanted:
+        if fill_mode == "blur":
+            yield "part1_with_sig", create_portrait_with_landscape_blur_fill(
+                img, sig_path, frame_ratio=frame_ratio, border_color=color, blur_strength=blur, sig_scale=sig_scale
+            )
+        else:
+            yield "part1_with_sig", create_portrait_with_landscape_content(
+                img, sig_path, frame_ratio=frame_ratio, border_color=color, sig_position=position,
+                sig_scale=sig_scale, background_color=bg,
+            )
+
+    if "part2_with_sig" in wanted:
+        if fill_mode == "blur":
+            img_rotated = img.transpose(Image.Transpose.ROTATE_270)
+            yield "part2_with_sig", create_portrait_with_landscape_blur_fill(
+                img_rotated,
+                sig_path,
+                frame_ratio=frame_ratio,
+                signature_rotation=270,
+                border_color=color,
+                blur_strength=blur,
+                sig_scale=sig_scale,
+            )
+        else:
+            # Sign the upright photo first, then rotate the signed result as one block
+            # so the signature turns together with the photo instead of staying upright.
+            signed_for_rotation = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
+            img_rotated = signed_for_rotation.transpose(Image.Transpose.ROTATE_270)
+            yield "part2_with_sig", create_portrait_with_landscape_content(
+                img_rotated, None, frame_ratio=frame_ratio, border_color=color, background_color=bg
+            )
 
 
 def kinds_for_ratio(ratio_type: Optional[str], config: dict) -> List[str]:
-    """Types de sorties produites pour un ratio donné (sans rien calculer)."""
+    """Types de sorties produites pour un ratio donné (sans rien calculer), hors types désactivés."""
     if ratio_type == "portrait_3_4":
         return ["framed"]
     if ratio_type == "portrait_2_3":
         return ["with_sig" if config.get("signature_path") else "framed"]
     if ratio_type == "landscape_2_3":
-        return ["part1", "part2", "part1_with_sig", "part2_with_sig"]
+        disabled = disabled_kinds_of(config)
+        return [kind for kind in OPTIONAL_KINDS if kind not in disabled]
     return []
 
 
-def iter_outputs(img: Image.Image, config: dict) -> Iterator[Tuple[str, Image.Image]]:
-    """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque."""
+def iter_outputs(
+    img: Image.Image, config: dict, only: Optional[Collection[str]] = None
+) -> Iterator[Tuple[str, Image.Image]]:
+    """Génère (kind, image) pour une image déjà ouverte, sans rien écrire sur disque.
+    `only` limite aux types demandés (les autres ne sont pas calculés) ; par défaut, tous les types actifs."""
     ratio_type = detect_ratio_type(*img.size)
+    wanted = [k for k in kinds_for_ratio(ratio_type, config) if only is None or k in only]
+    if not wanted:
+        return
     if ratio_type == "portrait_3_4":
         yield "framed", render_portrait_3_4(img, config)
     elif ratio_type == "portrait_2_3":
-        yield kinds_for_ratio(ratio_type, config)[0], render_portrait_2_3(img, config)
+        yield wanted[0], render_portrait_2_3(img, config)
     elif ratio_type == "landscape_2_3":
-        yield from iter_split_2_3_to_3_4(img, config)
+        yield from iter_split_2_3_to_3_4(img, config, only=wanted)
 
 
 def peek_ratio_type(path: Path) -> Optional[str]:
@@ -610,11 +643,46 @@ def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> 
     return list(iter_outputs(img, config))
 
 
+def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] = None) -> Optional[Image.Image]:
+    """Rend une seule sortie (pleine résolution par défaut), ou None si ce type n'existe pas pour cette photo."""
+    img = open_image(path)
+    if max_side and max(img.size) > max_side:
+        img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    for found, out in iter_outputs(img, config, only={kind}):
+        if found == kind:
+            return out
+    return None
+
+
+def measure_border(img: Image.Image, color, tolerance: int = 12, skip_color=None) -> int:
+    """Épaisseur (px) du cadre de la couleur donnée, mesurée depuis le bord haut au milieu de l'image.
+    `skip_color` : couleur d'un fond uni qui entoure le cadre (ignoré avant d'atteindre le cadre)."""
+    rgb = img.convert("RGB")
+    color = tuple(color)
+    skip = tuple(skip_color) if skip_color is not None else None
+    x = rgb.width // 2
+
+    def close(pixel, target):
+        return all(abs(pixel[i] - target[i]) <= tolerance for i in range(3))
+
+    count = 0
+    for y in range(rgb.height):
+        pixel = rgb.getpixel((x, y))
+        if close(pixel, color):
+            count += 1
+        elif count == 0 and skip is not None and close(pixel, skip):
+            continue
+        else:
+            break
+    return count
+
+
 def process_image(
     input_path: Path,
     output_dir: Path,
     config: dict,
     prefixes: Optional[Dict[str, str]] = None,
+    excluded: Optional[Collection[str]] = None,
 ) -> List[Path]:
     img = open_image(input_path)
     width, height = img.size
@@ -631,7 +699,8 @@ def process_image(
 
     quality = jpeg_quality_of(config)
     output_files: List[Path] = []
-    for kind, out_img in iter_outputs(img, config):
+    wanted = [k for k in kinds_for_ratio(ratio_type, config) if item_key(input_path, k) not in (excluded or ())]
+    for kind, out_img in iter_outputs(img, config, only=wanted):
         prefix = (prefixes or {}).get(item_key(input_path, kind), "")
         out_path = output_dir / output_name(input_path, kind, prefix)
         save_image(out_img, out_path, quality)
@@ -642,7 +711,7 @@ def process_image(
 @dataclass
 class FileResult:
     path: Path
-    status: str  # "ok" | "skipped" | "error" | "cancelled"
+    status: str  # "ok" | "skipped" | "excluded" | "error" | "cancelled"
     outputs: List[Path] = field(default_factory=list)
     message: str = ""
 
@@ -656,14 +725,17 @@ def process_batch(
     progress: Optional[Callable[[int, int, Path], None]] = None,
     cancel: Optional[threading.Event] = None,
     workers: int = 1,
+    excluded: Optional[Collection[str]] = None,
 ) -> List[FileResult]:
     """Traite un lot de photos. Si `number_files`, chaque sortie reçoit un préfixe 01_, 02_… selon
-    `order` (liste de clés item_key ; les éléments absents suivent dans l'ordre naturel)."""
+    `order` (liste de clés item_key ; les éléments absents suivent dans l'ordre naturel).
+    `excluded` : clés item_key des images de sortie à ne pas produire (elles ne sont pas numérotées)."""
+    excluded = set(excluded or ())
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     prefixes = None
     if number_files:
-        items = planned_items(files, config)
+        items = [item for item in planned_items(files, config) if item_key(*item) not in excluded]
         prefixes = build_prefixes(merge_order(order or [], items))
 
     total = len(files)
@@ -675,11 +747,13 @@ def process_batch(
         if cancel is not None and cancel.is_set():
             return FileResult(path, "cancelled")
         try:
-            outputs = process_image(path, output_dir, config, prefixes)
+            outputs = process_image(path, output_dir, config, prefixes, excluded)
         except Exception as exc:
             logger.exception("Erreur sur %s", path)
             return FileResult(path, "error", message=str(exc) or exc.__class__.__name__)
         if not outputs:
+            if any(key.startswith(f"{path}|") for key in excluded):
+                return FileResult(path, "excluded", message="toutes les images exclues")
             return FileResult(path, "skipped", message="ratio non supporté")
         return FileResult(path, "ok", outputs)
 

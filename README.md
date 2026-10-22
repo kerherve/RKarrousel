@@ -17,11 +17,15 @@ deux portraits 3/4, fond flouté ou noir, signature, et numérotation des fichie
 Téléchargez `PhotoSplitter.exe` depuis les *Releases* du dépôt, puis lancez-le.
 
 - **Fichiers** : ajoutez des fichiers ou des dossiers (ou glissez-déposez-les), choisissez le dossier de destination.
-- **Réglages** : épaisseur et couleur du cadre, fond noir/flouté et intensité du flou, signature (position, taille),
+- **Réglages** : épaisseur et couleur du cadre, fond uni (couleur au choix) ou flouté et intensité du flou, signature (position, taille),
   qualité JPEG. Les réglages sont enregistrés automatiquement à la fermeture.
 - **Aperçu et ordre…** : affiche le rendu final de chaque image dans une grille façon Instagram. Glissez les images
   pour choisir leur ordre — les morceaux d'une même photo peuvent être séparés. Avec « Numéroter les fichiers »,
   les fichiers générés sont préfixés `01_`, `02_`… selon cet ordre.
+  Cliquez une image pour la sélectionner : **Voir en grand** (ou double-clic) ouvre le rendu en pleine résolution avec
+  zoom, déplacement et une règle (clic droit + glisser) qui mesure en pixels, par exemple l'épaisseur du cadre ;
+  **Exclure** (ou touche Suppr) retire l'image : elle n'est ni générée ni numérotée, et on peut la réintégrer.
+- **Réglages** : les types d'images produites pour les paysages se décochent aussi une fois pour toutes.
 - **Langue** : français ou anglais (liste en haut à droite).
 - En cas de problème, le journal `image_splitter.log` est créé à côté de l'exécutable.
 
