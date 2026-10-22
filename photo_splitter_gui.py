@@ -132,7 +132,8 @@ class PhotoSplitterGUI:
         cfg = self.config
         self.source_dir = tk.StringVar(value=cfg.get("last_source_dir", ""))
         self.dest_dir = tk.StringVar(value=cfg.get("last_dest_dir", "output"))
-        self.frame_ratio = tk.DoubleVar(value=cfg.get("frame_ratio", DEFAULT_FRAME_RATIO))
+        # affiché en pourcentage du plus petit côté (1 = 1 %) ; stocké en ratio (0.01) dans la config
+        self.frame_percent = tk.DoubleVar(value=round(float(cfg.get("frame_ratio", DEFAULT_FRAME_RATIO)) * 100, 2))
         self.landscape_fill_mode = tk.StringVar(value=cfg.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE))
         self.signature_path = tk.StringVar(value=cfg.get("signature_path", ""))
         self.number_files = tk.BooleanVar(value=cfg.get("number_files", DEFAULT_NUMBER_FILES))
@@ -186,7 +187,7 @@ class PhotoSplitterGUI:
         return ttk.Style().lookup("TFrame", "background") or ("#1c1c1c" if self.dark else "#fafafa")
 
     # ------------------------------------------------------------------ construction de l'UI
-    def build_ui(self):
+    def build_ui(self, select_tab: int = 0):
         for child in self.root.winfo_children():
             if child is not self.order_window:
                 child.destroy()
@@ -213,32 +214,17 @@ class PhotoSplitterGUI:
         ttk.Label(titles, text=t("app_heading"), style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(titles, text=t("app_subtitle"), style="Subtitle.TLabel").pack(anchor=tk.W)
         ttk.Button(header, text=t("about"), command=self.show_about).pack(side=tk.RIGHT, anchor=tk.S)
-        language_box = ttk.Combobox(
-            header,
-            state="readonly",
-            width=10,
-            values=[i18n.LANGUAGES[code] for code in i18n.LANGUAGES],
-        )
-        language_box.set(i18n.LANGUAGES[i18n.get_language()])
-        language_box.bind("<<ComboboxSelected>>", lambda e: self.change_language(language_box.current()))
-        language_box.pack(side=tk.RIGHT, padx=(0, 10), anchor=tk.S)
-        ttk.Label(header, text=t("language"), style="Subtitle.TLabel").pack(side=tk.RIGHT, padx=(0, 6), anchor=tk.S, pady=(0, 6))
-        theme_box = ttk.Combobox(
-            header, state="readonly", width=9, values=[t("theme_auto"), t("theme_light"), t("theme_dark")]
-        )
-        theme_box.current(THEME_CHOICES.index(self.config.get("theme", "auto")) if self.config.get("theme", "auto") in THEME_CHOICES else 0)
-        theme_box.bind("<<ComboboxSelected>>", lambda e: self.change_theme(theme_box.current()))
-        theme_box.pack(side=tk.RIGHT, padx=(0, 16), anchor=tk.S)
-        ttk.Label(header, text=t("theme"), style="Subtitle.TLabel").pack(side=tk.RIGHT, padx=(0, 6), anchor=tk.S, pady=(0, 6))
 
         self.notebook = notebook = ttk.Notebook(container)
         notebook.grid(row=1, column=0, sticky=tk.NSEW)
         tab_files = ttk.Frame(notebook, padding=14)
-        tab_settings = ttk.Frame(notebook, padding=14)
+        tab_settings = ttk.Frame(notebook)
         notebook.add(tab_files, text=t("tab_files"))
         notebook.add(tab_settings, text=t("tab_settings"))
         self.build_files_tab(tab_files)
-        self.build_settings_tab(tab_settings)
+        self.build_settings_tab(self.make_scrollable(tab_settings))
+        if select_tab:
+            notebook.select(select_tab)
 
         preview_frame = ttk.LabelFrame(container, text=t("preview_group"), padding=12)
         preview_frame.grid(row=1, column=1, sticky=tk.NSEW, padx=(16, 0))
@@ -300,13 +286,59 @@ class PhotoSplitterGUI:
             row=1, column=0, columnspan=3, sticky=tk.W, pady=(8, 0)
         )
 
+    def make_scrollable(self, parent) -> ttk.Frame:
+        """Zone défilante (molette comprise) : l'onglet Réglages peut grandir sans être coupé."""
+        canvas = tk.Canvas(parent, highlightthickness=0, bg=self.surface_color(), borderwidth=0)
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        inner = ttk.Frame(canvas, padding=14)
+        window = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+
+        def on_wheel(event):
+            if inner.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        def bind_wheel(_):
+            canvas.bind_all("<MouseWheel>", on_wheel)
+
+        def unbind_wheel(_):
+            canvas.unbind_all("<MouseWheel>")
+
+        canvas.bind("<Enter>", bind_wheel)
+        canvas.bind("<Leave>", unbind_wheel)
+        return inner
+
     def build_settings_tab(self, tab):
         tab.columnconfigure(0, weight=1)
 
+        appearance = ttk.LabelFrame(tab, text=t("appearance_group"), padding=12)
+        appearance.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
+        ttk.Label(appearance, text=t("language")).grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+        language_box = ttk.Combobox(
+            appearance, state="readonly", width=12, values=[i18n.LANGUAGES[code] for code in i18n.LANGUAGES]
+        )
+        language_box.set(i18n.LANGUAGES[i18n.get_language()])
+        language_box.bind("<<ComboboxSelected>>", lambda e: self.change_language(language_box.current()))
+        language_box.grid(row=0, column=1, padx=(0, 28))
+        ttk.Label(appearance, text=t("theme")).grid(row=0, column=2, sticky=tk.W, padx=(0, 8))
+        theme_box = ttk.Combobox(
+            appearance, state="readonly", width=10, values=[t("theme_auto"), t("theme_light"), t("theme_dark")]
+        )
+        current_theme = self.config.get("theme", "auto")
+        theme_box.current(THEME_CHOICES.index(current_theme) if current_theme in THEME_CHOICES else 0)
+        theme_box.bind("<<ComboboxSelected>>", lambda e: self.change_theme(theme_box.current()))
+        theme_box.grid(row=0, column=3)
+
         frame_group = ttk.LabelFrame(tab, text=t("frame_group"), padding=12)
-        frame_group.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
+        frame_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Label(frame_group, text=t("frame_ratio")).grid(row=0, column=0, sticky=tk.W)
-        ttk.Spinbox(frame_group, from_=0.01, to=0.2, increment=0.01, textvariable=self.frame_ratio, width=8).grid(
+        ttk.Spinbox(
+            frame_group, from_=0.1, to=20, increment=0.1, format="%.1f", textvariable=self.frame_percent, width=8
+        ).grid(
             row=0, column=1, padx=8
         )
         ttk.Label(frame_group, text=t("frame_ratio_hint")).grid(row=0, column=2, sticky=tk.W)
@@ -321,7 +353,7 @@ class PhotoSplitterGUI:
         self.update_color_swatch()
 
         fill_group = ttk.LabelFrame(tab, text=t("fill_group"), padding=12)
-        fill_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
+        fill_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Radiobutton(fill_group, text=t("fill_black"), value="black", variable=self.landscape_fill_mode).grid(
             row=0, column=0, sticky=tk.W, padx=(0, 16)
         )
@@ -346,7 +378,7 @@ class PhotoSplitterGUI:
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
 
         sig_group = ttk.LabelFrame(tab, text=t("signature_group"), padding=12)
-        sig_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
+        sig_group.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
         sig_group.columnconfigure(0, weight=1)
         sig_row = ttk.Frame(sig_group)
         sig_row.grid(row=0, column=0, columnspan=4, sticky=tk.EW)
@@ -370,7 +402,7 @@ class PhotoSplitterGUI:
         )
 
         output_group = ttk.LabelFrame(tab, text=t("output_group"), padding=12)
-        output_group.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
+        output_group.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Label(output_group, text=t("jpeg_quality")).grid(row=0, column=0, sticky=tk.W)
         ttk.Spinbox(output_group, from_=50, to=100, increment=1, textvariable=self.jpeg_quality, width=6).grid(
             row=0, column=1, padx=8
@@ -378,7 +410,7 @@ class PhotoSplitterGUI:
         ttk.Label(output_group, text=t("jpeg_quality_hint")).grid(row=0, column=2, sticky=tk.W)
 
         kinds_group = ttk.LabelFrame(tab, text=t("kinds_group"), padding=12)
-        kinds_group.grid(row=4, column=0, sticky=tk.EW)
+        kinds_group.grid(row=5, column=0, sticky=tk.EW)
         for position, kind in enumerate(OPTIONAL_KINDS + (KIND_CROP,)):
             ttk.Checkbutton(kinds_group, text=kind_label(kind).capitalize(), variable=self.kind_vars[kind]).grid(
                 row=position // 2, column=position % 2, sticky=tk.W, padx=(0, 24), pady=2
@@ -415,7 +447,7 @@ class PhotoSplitterGUI:
         if self.order_window is not None:
             self.order_window.close()
             self.order_window = None
-        self.build_ui()
+        self.build_ui(select_tab=1)
         self.set_status(t("status_ready"))
 
     def change_theme(self, index: int):
@@ -427,7 +459,7 @@ class PhotoSplitterGUI:
             self.order_window.close()
             self.order_window = None
         self.dark = self.apply_theme()
-        self.build_ui()
+        self.build_ui(select_tab=1)
         self.set_status(t("status_ready"))
 
     def show_about(self):
@@ -446,7 +478,11 @@ class PhotoSplitterGUI:
         if added:
             first = Path(paths[0])
             self.source_dir.set(str(first if first.is_dir() else first.parent))
+            had_selection = bool(self.listbox.selection())
             self.refresh_list()
+            if not had_selection and self.selected_paths:
+                self.listbox.selection_set("0")  # la première entrée est prévisualisée d'office
+                self.on_list_select(None)
 
     def add_files(self):
         initial_dir = self.source_dir.get() or os.getcwd()
@@ -548,8 +584,12 @@ class PhotoSplitterGUI:
         if path_obj.is_file():
             self.show_preview(path_obj)
         else:
-            self.draw_preview_placeholder()
-            self.selected_file_info.set(t("preview_folder", path=path))
+            images = gather_input_files([path])
+            if images:
+                self.show_preview(images[0], extra=t("preview_folder", path=path, count=len(images)))
+            else:
+                self.draw_preview_placeholder()
+                self.selected_file_info.set(t("preview_folder_empty", path=path))
 
     def draw_preview_placeholder(self):
         self.canvas.delete("all")
@@ -565,7 +605,7 @@ class PhotoSplitterGUI:
             justify=tk.CENTER,
         )
 
-    def show_preview(self, path: Path):
+    def show_preview(self, path: Path, extra: str = ""):
         try:
             img = Image.open(path)
             img = ImageOps.exif_transpose(img)
@@ -575,7 +615,8 @@ class PhotoSplitterGUI:
             self.canvas.create_image(self.preview_w // 2, self.preview_h // 2, image=self.preview_image)
             width, height = img.size
             ratio = width / height if height else 0
-            self.selected_file_info.set(t("preview_info", name=path.name, width=width, height=height, ratio=ratio))
+            info = t("preview_info", name=path.name, width=width, height=height, ratio=ratio)
+            self.selected_file_info.set(f"{extra}\n{info}" if extra else info)
         except Exception as exc:
             self.selected_file_info.set(t("preview_error", error=exc))
 
@@ -585,7 +626,7 @@ class PhotoSplitterGUI:
         cfg = self.config
         cfg["last_source_dir"] = self.source_dir.get()
         cfg["last_dest_dir"] = self.dest_dir.get()
-        cfg["frame_ratio"] = _var_value(self.frame_ratio, DEFAULT_FRAME_RATIO)
+        cfg["frame_ratio"] = round(max(0.001, min(0.2, _var_value(self.frame_percent, DEFAULT_FRAME_RATIO * 100) / 100)), 6)
         cfg["landscape_fill_mode"] = self.landscape_fill_mode.get()
         cfg["signature_path"] = self.signature_path.get()
         cfg["number_files"] = bool(self.number_files.get())
