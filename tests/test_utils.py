@@ -230,6 +230,49 @@ class ExclusionAndColorTests(unittest.TestCase):
         self.assertEqual(utils.measure_border(img, (255, 255, 255)), 0)
 
 
+class NoFrameTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_frame_ratio_helpers(self):
+        self.assertEqual(utils.frame_ratio_of({"frame_ratio": 0.03}), 0.03)
+        self.assertEqual(utils.frame_ratio_of({"frame_ratio": 0.03, "frame_enabled": False}), 0.0)
+        self.assertEqual(utils.border_px_for(1000, 0.0), 0)
+        self.assertEqual(utils.border_px_for(10, 0.001), 1)  # avec cadre : jamais moins de 1 px
+
+    def test_framed_portrait_keeps_its_size_without_frame(self):
+        src = make_image(self.dir, "p.jpg", (600, 800))
+        (_, img), = utils.render_outputs(src, {"frame_enabled": False, "frame_ratio": 0.05})
+        self.assertEqual(img.size, (600, 800))
+
+    def test_every_output_is_3_4_without_frame(self):
+        config = {"frame_enabled": False, "frame_ratio": 0.05, "landscape_fill_mode": "blur"}
+        sources = {
+            "land": make_image(self.dir, "l.jpg", (900, 600)),
+            "p23": make_image(self.dir, "p23.jpg", (600, 900)),
+        }
+        for mode in ("blur", "black"):
+            for path in sources.values():
+                for kind, img in utils.render_outputs(path, {**config, "landscape_fill_mode": mode}):
+                    self.assertAlmostEqual(img.width / img.height, 3 / 4, delta=0.002, msg=f"{path.name} {kind} {mode}")
+
+    def test_crop_without_frame_is_the_bare_crop(self):
+        src = make_image(self.dir, "p23.jpg", (600, 900))
+        img = utils.render_output(src, {"frame_enabled": False}, "crop34")
+        self.assertEqual(img.size, (600, 800))
+
+    def test_no_white_border_is_measurable(self):
+        src = make_image(self.dir, "p.jpg", (600, 800), (10, 20, 30))
+        framed = utils.render_output(src, {"frame_ratio": 0.05}, "framed")
+        bare = utils.render_output(src, {"frame_ratio": 0.05, "frame_enabled": False}, "framed")
+        self.assertGreater(utils.measure_border(framed, (255, 255, 255)), 0)
+        self.assertEqual(utils.measure_border(bare, (255, 255, 255)), 0)
+
+
 class CropTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

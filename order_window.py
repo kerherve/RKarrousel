@@ -26,6 +26,7 @@ DRAG_THRESHOLD = 6
 
 RENDER_KEYS = (
     "frame_ratio",
+    "frame_enabled",
     "landscape_fill_mode",
     "signature_path",
     "border_color",

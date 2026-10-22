@@ -21,6 +21,14 @@ a `--smoke-test` of the exe, the Inno Setup installer (`installer/RKarrousel.iss
 Dry run without publishing: `gh workflow run release.yml --ref master` (installer kept as a run artifact).
 The local build below is still needed to install the exe on the user's machine and as a fallback if CI fails.
 
+## Auto-update contract (do not break)
+The app updates itself from the latest GitHub release: `updater.py` looks for an asset named exactly
+`RKarrousel-vX.Y.Z.exe` (portable exe, X.Y.Z = tag without `v`) and replaces the running exe in place (config untouched).
+So every release MUST keep that asset name; the Setup asset is only for first installs. The repo is private: the updater
+needs a GitHub token in Settings, or the repo must be public. A real self-update can be tested with two exes built from
+different `version.py` values, a local fake GitHub (`RKARROUSEL_UPDATE_API`/`RKARROUSEL_UPDATE_REPO` env vars) and
+`RKarrousel.exe --self-update log.txt`. NEVER stop test processes by name on the user's machine (see memory).
+
 ## Steps
 1. Make sure the work is committed and pushed on `master` (`git status` clean apart from ignored/untracked build output)
    and that `python3 -m unittest discover -s tests` passes.

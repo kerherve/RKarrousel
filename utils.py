@@ -154,6 +154,21 @@ def disabled_kinds_of(config: dict) -> set:
     return {str(kind) for kind in value} if isinstance(value, (list, tuple, set)) else set()
 
 
+def frame_ratio_of(config: dict) -> float:
+    """Épaisseur du cadre en fraction du plus petit côté ; 0 si l'utilisateur ne veut pas de cadre."""
+    if config.get("frame_enabled", True) is False:
+        return 0.0
+    try:
+        return max(0.0, float(config.get("frame_ratio", DEFAULT_FRAME_RATIO)))
+    except (TypeError, ValueError):
+        return DEFAULT_FRAME_RATIO
+
+
+def border_px_for(side: float, frame_ratio: float) -> int:
+    """Épaisseur du cadre en pixels : 0 sans cadre, sinon au moins 1 px."""
+    return 0 if frame_ratio <= 0 else max(1, int(round(side * frame_ratio)))
+
+
 def crop_offset_for(config: dict, path) -> float:
     """Position verticale (0 = haut, 1 = bas) du recadrage 3/4 choisi pour cette photo."""
     offsets = config.get("crop_offsets") or {}
@@ -167,7 +182,7 @@ def crop_offset_for(config: dict, path) -> float:
 def crop_height_for(width: int, height: int, frame_ratio: float) -> int:
     """Hauteur de la zone conservée pour que, une fois encadrée, l'image soit exactement en 3/4.
     L'épaisseur du cadre suit la règle des autres sorties : frame_ratio × plus petit côté (la largeur)."""
-    border = max(1, int(round(width * frame_ratio)))
+    border = border_px_for(width, frame_ratio)
     return min(height, int(round((4 * width + 2 * border) / 3)))
 
 
@@ -212,6 +227,8 @@ def open_image(path: Path) -> Image.Image:
 
 
 def frame_image(img: Image.Image, border_px: int, color=DEFAULT_BORDER_COLOR) -> Image.Image:
+    if border_px <= 0:
+        return img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img.copy()
     if img.mode == "RGBA":
         framed = Image.new("RGBA", (img.width + 2 * border_px, img.height + 2 * border_px), (*color, 255))
     else:
@@ -250,7 +267,7 @@ def save_image(img: Image.Image, output_path: Path, quality: int = DEFAULT_JPEG_
 
 
 def render_portrait_3_4(img: Image.Image, config: dict) -> Image.Image:
-    border_px = max(1, int(round(min(img.size) * config.get("frame_ratio", DEFAULT_FRAME_RATIO))))
+    border_px = border_px_for(min(img.size), frame_ratio_of(config))
     return frame_image(img, border_px, border_color_of(config))
 
 
@@ -264,7 +281,7 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
         return create_portrait_with_landscape_blur_fill(
             img,
             sig_path,
-            frame_ratio=config.get("frame_ratio", DEFAULT_FRAME_RATIO),
+            frame_ratio=frame_ratio_of(config),
             signature_on_photo=True,
             border_color=color,
             blur_strength=blur_strength_of(config),
@@ -275,7 +292,7 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     signed = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
 
     src_w, src_h = signed.size
-    border_px = max(1, int(round(min(src_w, src_h) * config.get("frame_ratio", DEFAULT_FRAME_RATIO))))
+    border_px = border_px_for(min(src_w, src_h), frame_ratio_of(config))
     framed = frame_image(signed, border_px, color)
 
     min_width = framed.width
@@ -306,9 +323,9 @@ def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP
     photos portrait d'origine sont signées, pas les images redimensionnées."""
     if img.mode != "RGB":
         img = img.convert("RGB")
-    frame_ratio = config.get("frame_ratio", DEFAULT_FRAME_RATIO)
+    frame_ratio = frame_ratio_of(config)
     width, height = img.size
-    border = max(1, int(round(width * frame_ratio)))
+    border = border_px_for(width, frame_ratio)
     crop_h = crop_height_for(width, height, frame_ratio)
     top = int(round((height - crop_h) * max(0.0, min(1.0, offset))))
     cropped = img.crop((0, top, width, top + crop_h))
@@ -400,7 +417,7 @@ def create_portrait_with_landscape_content(
     # photo's own corner (not the page corner), and scales/rotates with it.
     signed = add_signature_to_image(img, signature_path, position=sig_position, user_scale=sig_scale)
     src_w, src_h = signed.size
-    border_px = max(1, int(round(min(src_w, src_h) * frame_ratio)))
+    border_px = border_px_for(min(src_w, src_h), frame_ratio)
 
     # determine 3/4 portrait size to fit the source image plus frame
     portrait_width = max(src_w + 2 * border_px, int(round((src_h + 2 * border_px) * 3 / 4)))
@@ -491,7 +508,7 @@ def create_portrait_with_landscape_blur_fill(
     )
     background.paste(sharp, (x_offset, y_offset))
 
-    border_px = max(1, int(round(min(content_width, content_height) * frame_ratio)))
+    border_px = border_px_for(min(content_width, content_height), frame_ratio)
     framed = frame_image(background, border_px, border_color)
     if signature_on_photo:
         return framed
@@ -516,13 +533,13 @@ def iter_split_2_3_to_3_4(
     """Génère (kind, image) pour un paysage 2/3 : deux moitiés encadrées (panorama)
     puis les deux versions portrait 3/4 de la photo entière."""
     width, height = img.size
-    frame_ratio = config.get("frame_ratio", DEFAULT_FRAME_RATIO)
+    frame_ratio = frame_ratio_of(config)
     color = border_color_of(config)
     target_width = width // 2
     # Border thickness is based on the crop's own width (the short side),
     # same basis as every other 3/4 output in the app (frame_ratio * short
     # side) so the frame reads the same thickness everywhere.
-    border_px = max(1, int(round(target_width * frame_ratio)))
+    border_px = border_px_for(target_width, frame_ratio)
     # The frame is added asymmetrically (left/top/bottom only, nothing on the
     # shared inner edge) so the pair reassembles without a double border in the
     # middle. That means the border itself skews the ratio: it adds border_px

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageTk
 
 from i18n import t
-from utils import crop_height_for, crop_offset_for, open_image, render_crop_3_4
+from utils import crop_height_for, crop_offset_for, frame_ratio_of, open_image, render_crop_3_4
 
 WORK_SIDE = 1100  # la photo est réduite pour l'édition : le recadrage est relatif, le rendu reste fidèle
 
@@ -94,7 +94,7 @@ class CropEditor(tk.Toplevel):
 
     # ------------------------------------------------------------------ géométrie du cadre
     def _rect_height(self) -> float:
-        ratio = self.config_snapshot.get("frame_ratio", 0.04)
+        ratio = frame_ratio_of(self.config_snapshot)
         return crop_height_for(self.work.width, self.work.height, ratio) * self.disp_scale
 
     def _rect_top(self) -> float:

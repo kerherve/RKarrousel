@@ -24,7 +24,7 @@ Téléchargez depuis les *Releases* du dépôt :
 - **`RKarrousel-vX.Y.Z.exe`** : version portable, un seul fichier, à lancer où vous voulez.
 
 - **Fichiers** : ajoutez des fichiers ou des dossiers (ou glissez-déposez-les), choisissez le dossier de destination.
-- **Réglages** : épaisseur et couleur du cadre, fond uni (couleur au choix) ou flouté et intensité du flou, signature (position, taille),
+- **Réglages** : épaisseur et couleur du cadre (ou **Sans cadre**), fond uni (couleur au choix) ou flouté et intensité du flou, signature (position, taille),
   qualité JPEG. Les réglages sont enregistrés automatiquement à la fermeture.
 - **Aperçu et ordre…** : affiche le rendu final de chaque image dans une grille façon Instagram. Glissez les images
   pour choisir leur ordre — les morceaux d'une même photo peuvent être séparés. Avec « Numéroter les fichiers »,
@@ -39,6 +39,18 @@ Téléchargez depuis les *Releases* du dépôt :
 - En cas de problème, le journal `image_splitter.log` est créé à côté de l'exécutable.
 
 La configuration `.image_splitter_config.json` est stockée à côté de l'exécutable.
+
+## Mises à jour automatiques
+
+Au démarrage (au plus toutes les 6 h, désactivable dans **Réglages → Mises à jour**), l'exécutable interroge les
+releases GitHub. S'il trouve une version plus récente, il affiche les nouveautés et propose **Mettre à jour
+maintenant**, **Plus tard** ou **Ignorer cette version**. Il télécharge alors `RKarrousel-vX.Y.Z.exe`, vérifie sa
+taille et son empreinte SHA-256, **vérifie que la nouvelle version démarre**, puis la met à la place de l'ancienne
+(l'ancienne est supprimée au démarrage suivant) et se relance. Rien n'est modifié si une étape échoue. Le raccourci et les
+réglages (fichier à côté de l'exécutable) ne bougent pas. Le bouton « Rechercher maintenant » force la vérification.
+
+Si le dépôt GitHub est **privé**, la recherche anonyme ne voit aucune release : renseignez un jeton GitHub (accès en
+lecture au contenu du dépôt) dans Réglages → Mises à jour, ou rendez le dépôt public.
 
 ## Envoi sur Google Drive (optionnel)
 

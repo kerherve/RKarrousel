@@ -1,6 +1,7 @@
 {
   "language": "@LANG@",
   "theme": "auto",
+  "frame_enabled": true,
   "frame_ratio": 0.01,
   "border_color": "#FFFFFF",
   "landscape_fill_mode": "blur",

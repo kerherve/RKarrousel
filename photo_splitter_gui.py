@@ -4,6 +4,8 @@ import os
 import queue
 import sys
 import threading
+import time
+import webbrowser
 import tkinter as tk
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -14,8 +16,10 @@ from PIL import Image, ImageOps, ImageTk
 
 import gdrive
 import i18n
+import updater
 from i18n import kind_label, t
 from order_window import OrderWindow
+from update_dialog import UpdateDialog
 from utils import (
     CONFIG_PATH,
     DEFAULT_BACKGROUND_COLOR_HEX,
@@ -59,6 +63,9 @@ logger = logging.getLogger("imagesplitter")
 WORKERS = max(1, min(3, os.cpu_count() or 1))
 MAX_ERRORS_SHOWN = 10
 THEME_CHOICES = ("auto", "light", "dark")
+FROZEN = bool(getattr(sys, "frozen", False))  # exécutable PyInstaller : seul cas où on peut se remplacer soi-même
+UPDATE_REPO = os.environ.get("RKARROUSEL_UPDATE_REPO", updater.REPO)  # surcharges pour les tests
+UPDATE_API = os.environ.get("RKARROUSEL_UPDATE_API", updater.API_URL)
 
 
 def setup_logging() -> None:
@@ -139,6 +146,7 @@ class PhotoSplitterGUI:
         self.landscape_fill_mode = tk.StringVar(value=cfg.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE))
         self.signature_path = tk.StringVar(value=cfg.get("signature_path", ""))
         self.number_files = tk.BooleanVar(value=cfg.get("number_files", DEFAULT_NUMBER_FILES))
+        self.no_frame = tk.BooleanVar(value=cfg.get("frame_enabled", True) is False)
         self.border_color = tk.StringVar(value=cfg.get("border_color", DEFAULT_BORDER_COLOR_HEX))
         self.background_color = tk.StringVar(value=cfg.get("background_color", DEFAULT_BACKGROUND_COLOR_HEX))
         disabled = disabled_kinds_of(cfg)
@@ -153,6 +161,10 @@ class PhotoSplitterGUI:
         self.gdrive_status = tk.StringVar(value="")
         self.gdrive_cancel = threading.Event()
         self.batch_config: dict = {}
+        self.update_check = tk.BooleanVar(value=bool(cfg.get("update_check", True)))
+        self.github_token = tk.StringVar(value=cfg.get("github_token", ""))
+        self.update_dialog: Optional[UpdateDialog] = None
+        self.update_cancel = threading.Event()
         self.status_text = tk.StringVar(value="")
         self.selected_file_info = tk.StringVar(value="")
         self.progress_value = tk.DoubleVar(value=0)
@@ -162,6 +174,9 @@ class PhotoSplitterGUI:
         self.build_ui()
         self.set_status(t("status_ready"))
         self.root.after(100, self.poll_events)
+        self.root.after(3000, self.auto_check_updates)
+        if FROZEN:  # l'ancienne version (.old) est encore verrouillée juste après une mise à jour : on réessaie
+            self.root.after(10000, lambda: updater.cleanup_leftovers(Path(sys.executable)))
 
     # ------------------------------------------------------------------ apparence
     def apply_theme(self) -> bool:
@@ -342,10 +357,14 @@ class PhotoSplitterGUI:
 
         frame_group = ttk.LabelFrame(tab, text=t("frame_group"), padding=12)
         frame_group.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
+        ttk.Checkbutton(frame_group, text=t("no_frame"), variable=self.no_frame, command=self.update_frame_widgets).grid(
+            row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 0)
+        )
         ttk.Label(frame_group, text=t("frame_ratio")).grid(row=0, column=0, sticky=tk.W)
-        ttk.Spinbox(
+        self.frame_spin = ttk.Spinbox(
             frame_group, from_=0.1, to=20, increment=0.1, format="%.1f", textvariable=self.frame_percent, width=8
-        ).grid(
+        )
+        self.frame_spin.grid(
             row=0, column=1, padx=8
         )
         ttk.Label(frame_group, text=t("frame_ratio_hint")).grid(row=0, column=2, sticky=tk.W)
@@ -354,10 +373,13 @@ class PhotoSplitterGUI:
         color_row.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(8, 0), padx=8)
         self.color_swatch = tk.Label(color_row, width=4, relief=tk.SOLID, borderwidth=1)
         self.color_swatch.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Entry(color_row, textvariable=self.border_color, width=10).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(color_row, text=t("choose_color"), command=self.choose_border_color).pack(side=tk.LEFT)
+        self.frame_color_entry = ttk.Entry(color_row, textvariable=self.border_color, width=10)
+        self.frame_color_entry.pack(side=tk.LEFT, padx=(0, 8))
+        self.frame_color_btn = ttk.Button(color_row, text=t("choose_color"), command=self.choose_border_color)
+        self.frame_color_btn.pack(side=tk.LEFT)
         self.border_color.trace_add("write", lambda *_: self.update_color_swatch())
         self.update_color_swatch()
+        self.update_frame_widgets()
 
         fill_group = ttk.LabelFrame(tab, text=t("fill_group"), padding=12)
         fill_group.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
@@ -448,6 +470,24 @@ class PhotoSplitterGUI:
         ttk.Label(drive_group, text=t("gd_folder_hint"), style="Hint.TLabel").grid(row=4, column=0, sticky=tk.W, pady=(4, 0))
         self.refresh_gdrive_status()
 
+        update_group = ttk.LabelFrame(tab, text=t("upd_group"), padding=12)
+        update_group.grid(row=7, column=0, sticky=tk.EW, pady=(8, 0))
+        update_group.columnconfigure(1, weight=1)
+        ttk.Checkbutton(update_group, text=t("upd_check_startup"), variable=self.update_check).grid(
+            row=0, column=0, columnspan=3, sticky=tk.W
+        )
+        ttk.Label(update_group, text=t("upd_current", version=__version__)).grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
+        ttk.Button(update_group, text=t("upd_check_now"), command=lambda: self.check_updates(manual=True)).grid(
+            row=1, column=1, sticky=tk.W, padx=(12, 0), pady=(10, 0)
+        )
+        ttk.Label(update_group, text=t("upd_token")).grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
+        ttk.Entry(update_group, textvariable=self.github_token, show="•").grid(
+            row=2, column=1, columnspan=2, sticky=tk.EW, padx=(12, 0), pady=(10, 0)
+        )
+        ttk.Label(update_group, text=t("upd_token_hint"), style="Hint.TLabel", wraplength=int(620 * self.scale)).grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0)
+        )
+
     # ------------------------------------------------------------------ glisser-déposer
     def setup_drop_target(self):
         if DND_FILES is None or not hasattr(self.root, "drop_target_register"):
@@ -478,6 +518,131 @@ class PhotoSplitterGUI:
             self.order_window = None
         self.build_ui(select_tab=1)
         self.set_status(t("status_ready"))
+
+    # ------------------------------------------------------------------ mises à jour
+    def auto_check_updates(self):
+        if not self.update_check.get() or not (FROZEN or os.environ.get("RKARROUSEL_UPDATE_API")):
+            return
+        if updater.check_due(self.config.get("last_update_check", 0)):
+            self.check_updates(manual=False)
+
+    def check_updates(self, manual: bool = False):
+        token = self.github_token.get().strip() or None
+        if manual:
+            self.set_status(t("upd_checking"))
+
+        def work():
+            try:
+                info = updater.fetch_latest_release(UPDATE_REPO, token, UPDATE_API)
+                self.events.put(("upd_check", info, None, manual))
+            except updater.UpdateError as exc:
+                self.events.put(("upd_check", None, exc, manual))
+            except Exception as exc:
+                logger.exception("Recherche de mise à jour")
+                self.events.put(("upd_check", None, updater.UpdateError(str(exc)), manual))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_update_check(self, info, error, manual: bool):
+        self.config["last_update_check"] = time.time()
+        save_config(CONFIG_PATH, self.config)
+        if error is not None:
+            logger.info("Recherche de mise à jour : %s", error)
+            if manual:
+                self.set_status(t("status_ready"))
+                no_token = not self.github_token.get().strip()
+                message = t("upd_private") if error.code == "not_found" and no_token else t("upd_error", message=error)
+                messagebox.showerror(t("upd_group"), message)
+            return
+        if updater.is_newer(info.version, __version__):
+            if manual or info.version != self.config.get("skipped_version"):
+                self.show_update_dialog(info)
+            self.set_status(t("upd_available_status", latest=info.version) if not manual else t("status_ready"))
+        elif manual:
+            self.set_status(t("status_ready"))
+            messagebox.showinfo(t("upd_group"), t("upd_uptodate", version=__version__))
+
+    def show_update_dialog(self, info):
+        if self.update_dialog is not None and self.update_dialog.winfo_exists():
+            self.update_dialog.lift()
+            return
+
+        def on_update():
+            if FROZEN:
+                self.start_update(info)
+            else:  # lancé depuis les sources : pas d'exécutable à remplacer
+                webbrowser.open(info.page_url)
+                self.update_dialog.close()
+
+        def on_skip():
+            self.config["skipped_version"] = info.version
+            save_config(CONFIG_PATH, self.config)
+            self.update_dialog.close()
+
+        self.update_dialog = UpdateDialog(
+            self.root, info, __version__, FROZEN, on_update, on_skip, lambda: setattr(self, "update_dialog", None)
+        )
+
+    def start_update(self, info):
+        dialog = self.update_dialog
+        dialog.set_busy(True)
+        self.update_cancel = threading.Event()
+        token = self.github_token.get().strip() or None
+        current = Path(sys.executable)
+
+        def work():
+            try:
+                updater.perform_update(
+                    info,
+                    current,
+                    token,
+                    progress=lambda done, total: self.events.put(("upd_progress", done, total)),
+                    cancel=self.update_cancel,
+                    status=lambda step: self.events.put(("upd_status", step)),
+                )
+                self.events.put(("upd_done",))
+            except updater.UpdateError as exc:
+                self.events.put(("upd_error", str(exc), exc.code, info.page_url))
+            except Exception as exc:
+                logger.exception("Mise à jour")
+                self.events.put(("upd_error", str(exc) or exc.__class__.__name__, "error", info.page_url))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_update_event(self, event):
+        kind, dialog = event[0], self.update_dialog
+        if kind == "upd_progress" and dialog is not None and dialog.winfo_exists():
+            _, done, total = event
+            percent = 100 * done / total if total else 0
+            dialog.set_progress(percent)
+            dialog.set_status(t("upd_downloading", percent=percent))
+        elif kind == "upd_status" and dialog is not None and dialog.winfo_exists():
+            dialog.set_status(t(f"upd_{event[1]}"))
+            dialog.set_progress(100 if event[1] != "downloading" else 0)
+        elif kind == "upd_done":
+            self.restart_after_update()
+        elif kind == "upd_error":
+            _, message, code, page = event
+            if dialog is not None and dialog.winfo_exists():
+                dialog.set_busy(False)
+                dialog.set_status("")
+                dialog.set_progress(0)
+            if code == "permission":
+                if messagebox.askyesno(t("upd_group"), t("upd_failed_permission", url=page)):
+                    webbrowser.open(page)
+            elif code != "cancelled":
+                messagebox.showerror(t("upd_group"), t("upd_error", message=message))
+
+    def restart_after_update(self):
+        """La nouvelle version est en place : on enregistre les réglages, on la relance et on quitte."""
+        try:
+            save_config(CONFIG_PATH, self.collect_config())
+            updater.relaunch(Path(sys.executable))
+        except Exception as exc:
+            logger.exception("Relance après mise à jour")
+            messagebox.showwarning(t("upd_group"), t("upd_restart_manually", error=exc))
+        self.cancel_event.set()
+        self.root.destroy()
 
     # ------------------------------------------------------------------ Google Drive
     def drive_client(self) -> Optional[gdrive.DriveClient]:
@@ -683,6 +848,12 @@ class PhotoSplitterGUI:
         if picked and picked[1]:
             self.border_color.set(picked[1].upper())
 
+    def update_frame_widgets(self):
+        """Sans cadre, l'épaisseur et la couleur du cadre n'ont plus de sens : on les grise."""
+        state = ["disabled"] if self.no_frame.get() else ["!disabled"]
+        for widget in (self.frame_spin, self.frame_color_entry, self.frame_color_btn):
+            widget.state(state)
+
     def choose_background_color(self):
         rgb = parse_color(self.background_color.get(), (0, 0, 0))
         picked = colorchooser.askcolor(color="#%02x%02x%02x" % rgb, title=t("bg_color"))
@@ -762,6 +933,7 @@ class PhotoSplitterGUI:
         cfg = self.config
         cfg["last_source_dir"] = self.source_dir.get()
         cfg["last_dest_dir"] = self.dest_dir.get()
+        cfg["frame_enabled"] = not self.no_frame.get()
         cfg["frame_ratio"] = round(max(0.001, min(0.2, _var_value(self.frame_percent, DEFAULT_FRAME_RATIO * 100) / 100)), 6)
         cfg["landscape_fill_mode"] = self.landscape_fill_mode.get()
         cfg["signature_path"] = self.signature_path.get()
@@ -773,6 +945,8 @@ class PhotoSplitterGUI:
         cfg["jpeg_quality"] = _var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
         cfg["signature_position"] = self.signature_position.get()
         cfg["signature_scale"] = _var_value(self.signature_scale, DEFAULT_SIGNATURE_SCALE)
+        cfg["update_check"] = bool(self.update_check.get())
+        cfg["github_token"] = self.github_token.get().strip()
         cfg["gdrive_enabled"] = bool(self.gdrive_enabled.get())
         cfg["gdrive_folder"] = self.gdrive_folder.get().strip() or "RKarrousel"
         cfg["language"] = i18n.get_language()
@@ -909,6 +1083,10 @@ class PhotoSplitterGUI:
                     self.set_status(t("gd_status_uploading", done=done, total=total, name=name))
                 elif kind == "upload_done":
                     self.on_upload_done(event[1])
+                elif kind == "upd_check":
+                    self.on_update_check(event[1], event[2], event[3])
+                elif kind in ("upd_progress", "upd_status", "upd_done", "upd_error"):
+                    self.on_update_event(event)
                 elif kind == "gd_connected":
                     self.gdrive_connect_btn.state(["!disabled"])
                     self.refresh_gdrive_status()
@@ -986,9 +1164,44 @@ def create_root():
     return tk.Tk()
 
 
+def run_self_update(log_path: Optional[Path]) -> int:
+    """Mise à jour sans interface (utilisée par les tests et les scripts) : `--self-update [fichier-journal]`."""
+    lines: List[str] = []
+
+    def log(message: str) -> None:
+        lines.append(message)
+        if log_path:
+            log_path.write_text("\n".join(lines), encoding="utf-8")
+
+    if not FROZEN:
+        log("error: --self-update only works with the packaged executable")
+        return 2
+    config = load_config(CONFIG_PATH)
+    token = (config.get("github_token") or "").strip() or None
+    try:
+        info = updater.fetch_latest_release(UPDATE_REPO, token, UPDATE_API)
+        log(f"latest={info.version} current={__version__}")
+        if not updater.is_newer(info.version, __version__):
+            log("up-to-date")
+            return 0
+        current = Path(sys.executable)
+        updater.perform_update(info, current, token, status=log)
+        log("relaunching")
+        updater.relaunch(current)
+        return 0
+    except updater.UpdateError as exc:
+        log(f"error: {exc}")
+        return 2
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     setup_logging()
+    if "--self-update" in argv:
+        index = argv.index("--self-update") + 1
+        return run_self_update(Path(argv[index]) if index < len(argv) else None)
+    if FROZEN:
+        updater.cleanup_leftovers(Path(sys.executable))
     root = create_root()
     app = PhotoSplitterGUI(root)
     if "--smoke-test" in argv:

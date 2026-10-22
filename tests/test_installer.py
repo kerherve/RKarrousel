@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 import utils
 
 KNOWN_KEYS = {
-    "language", "theme", "frame_ratio", "border_color", "landscape_fill_mode", "background_color",
+    "language", "theme", "frame_enabled", "frame_ratio", "border_color", "landscape_fill_mode", "background_color",
     "blur_strength", "jpeg_quality", "number_files", "signature_position", "signature_scale",
     "disabled_kinds", "last_dest_dir", "gdrive_enabled", "gdrive_folder",
 }

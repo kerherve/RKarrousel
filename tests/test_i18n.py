@@ -23,8 +23,9 @@ class I18nTests(unittest.TestCase):
 
     def test_every_key_used_in_the_code_exists(self):
         used = set()
-        for name in ("photo_splitter_gui.py", "order_window.py", "image_viewer.py", "crop_editor.py"):
+        for name in ("photo_splitter_gui.py", "order_window.py", "image_viewer.py", "crop_editor.py", "update_dialog.py"):
             used |= set(re.findall(r"\bt\(\s*[\"']([\w-]+)[\"']", (ROOT / name).read_text(encoding="utf-8")))
+        used |= {f"upd_{step}" for step in ("downloading", "verifying", "installing")}
         used |= {f"pos_{p}" for p in ("bottom-right", "bottom-center", "bottom-left")}
         used |= {f"kind_{k}" for k in ("framed", "with_sig", "part1", "part2", "part1_with_sig", "part2_with_sig", "crop34")}
         missing = sorted(key for key in used if key not in i18n.STRINGS["fr"])
