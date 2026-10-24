@@ -80,7 +80,7 @@ class GridCanvas(tk.Canvas):
         for index, tile in enumerate(self.model.tiles):
             self._draw_tile(tile, index, *self.layout.slot_origin(index))
         self.configure(
-            scrollregion=(0, 0, self.layout.canvas_width, self.layout.content_height(len(self.model.tiles)))
+            scrollregion=(0, 0, self.layout.offset + self.layout.canvas_width, self.layout.content_height(len(self.model.tiles)))
         )
 
     def _photo(self, tile: Tile) -> Optional[ImageTk.PhotoImage]:

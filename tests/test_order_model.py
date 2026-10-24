@@ -96,12 +96,22 @@ class GridLayoutTests(unittest.TestCase):
         self.assertEqual((layout.tile_w, layout.tile_h), (tile_w, tile_h))  # la taille des vignettes ne change pas
         self.assertFalse(layout.fit_width(1500))  # même largeur : rien à refaire
 
+    def test_the_columns_are_centred_in_the_window(self):
+        layout = GridLayout(1.0, (3, 4))
+        layout.fit_width(1500)
+        left = layout.slot_origin(0)[0]
+        right = layout.slot_origin(layout.columns - 1)[0] + layout.tile_w
+        self.assertLessEqual(abs(left - (1500 - right)), 2 * layout.gap)  # même marge à gauche et à droite
+        self.assertEqual(layout.tile_at(left + 1, layout.gap + 1, layout.columns), 0)  # et la souris suit le décalage
+        layout.fit_width(layout.canvas_width)
+        self.assertEqual(layout.offset, 0)
+
     def test_order_reads_left_to_right_then_down_whatever_the_column_count(self):
         layout = GridLayout(1.0, (3, 4))
         layout.fit_width(1500)
         columns = layout.columns
         x0, y0 = layout.slot_origin(columns)  # première case de la 2e ligne
-        self.assertEqual(x0, layout.gap)
+        self.assertEqual(x0, layout.offset + layout.gap)
         self.assertGreater(y0, layout.gap)
         x, y = layout.slot_origin(columns - 1)  # dernière colonne de la 1re ligne
         self.assertEqual(layout.tile_at(x + 1, y + 1, columns * 2), columns - 1)

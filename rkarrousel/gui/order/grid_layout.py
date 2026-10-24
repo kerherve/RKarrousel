@@ -16,6 +16,7 @@ class GridLayout:
         self.tile_w = int(BASE_TILE_W * scale)
         self.gap = max(2, int(BASE_GAP * scale))
         self.columns = MIN_COLUMNS
+        self.offset = 0  # marge à gauche qui centre les colonnes dans la fenêtre
         self.reshape(target)
 
     def reshape(self, target: Tuple[int, int]) -> None:
@@ -25,12 +26,15 @@ class GridLayout:
         self.tile_h = int(self.tile_w * th / tw)
 
     def fit_width(self, width: int) -> bool:
-        """Nombre de colonnes qui tiennent dans `width` pixels (au moins trois). Renvoie True s'il a changé."""
+        """Nombre de colonnes qui tiennent dans `width` pixels (au moins trois), et marge qui les centre. Renvoie True si
+        l'un des deux a changé."""
         columns = max(MIN_COLUMNS, (width - self.gap) // (self.tile_w + self.gap))
-        if columns == self.columns:
-            return False
+        changed_columns = columns != self.columns
         self.columns = columns
-        return True
+        offset = max(0, (width - self.canvas_width) // 2)
+        changed = changed_columns or offset != self.offset
+        self.offset = offset
+        return changed
 
     @property
     def canvas_width(self) -> int:
@@ -42,11 +46,11 @@ class GridLayout:
 
     def slot_origin(self, index: int) -> Tuple[int, int]:
         col, row = index % self.columns, index // self.columns
-        return self.gap + col * (self.tile_w + self.gap), self.gap + row * (self.tile_h + self.gap)
+        return self.offset + self.gap + col * (self.tile_w + self.gap), self.gap + row * (self.tile_h + self.gap)
 
     def tile_at(self, x: float, y: float, count: int) -> Optional[int]:
         """Indice de la vignette sous le point (x, y), ou None."""
-        col = int((x - self.gap) // (self.tile_w + self.gap))
+        col = int((x - self.offset - self.gap) // (self.tile_w + self.gap))
         row = int((y - self.gap) // (self.tile_h + self.gap))
         if not 0 <= col < self.columns or row < 0:
             return None
@@ -55,7 +59,7 @@ class GridLayout:
 
     def slot_at(self, x: float, y: float, count: int) -> int:
         """Emplacement le plus proche du point (x, y), borné à la grille (cible d'un glisser-déposer)."""
-        col = min(self.columns - 1, max(0, int((x - self.gap) // (self.tile_w + self.gap))))
+        col = min(self.columns - 1, max(0, int((x - self.offset - self.gap) // (self.tile_w + self.gap))))
         row = max(0, int((y - self.gap) // (self.tile_h + self.gap)))
         return min(count - 1, row * self.columns + col)
 
