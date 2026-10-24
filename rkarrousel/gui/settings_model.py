@@ -18,9 +18,11 @@ from rkarrousel.config import (
     disabled_kinds_of,
 )
 from rkarrousel.formats import OUTPUT_FORMATS
-from rkarrousel.kinds import KIND_CROP, OPTIONAL_KINDS
+from rkarrousel.kinds import KIND_CROP, OPTIONAL_KINDS, PLACEABLE_KINDS, PLACEMENTS, placement_of
 
 ALL_KINDS = OPTIONAL_KINDS + (KIND_CROP,)
+CHECKBOX_KINDS = tuple(kind for kind in ALL_KINDS if kind not in PLACEABLE_KINDS)  # les autres ont une liste de choix
+PLACEMENT_CHOICES = PLACEMENTS + ("none",)  # « none » : l'image n'est pas produite (`disabled_kinds`)
 
 
 def var_value(var: tk.Variable, default):
@@ -55,7 +57,11 @@ class SettingsModel:
         self.output_format = tk.StringVar(value=cfg.get("output_format", "3:4"))
         self.output_width = tk.IntVar(value=int(cfg.get("output_width", 0) or 0))
         disabled = disabled_kinds_of(cfg)
-        self.kind_vars: Dict[str, tk.BooleanVar] = {kind: tk.BooleanVar(value=kind not in disabled) for kind in ALL_KINDS}
+        self.kind_vars: Dict[str, tk.BooleanVar] = {kind: tk.BooleanVar(value=kind not in disabled) for kind in CHECKBOX_KINDS}
+        # photos entières d'un paysage : avant / après le découpage, à la fin du carrousel, ou aucune
+        self.placements: Dict[str, tk.StringVar] = {
+            kind: tk.StringVar(value="none" if kind in disabled else placement_of(cfg, kind)) for kind in PLACEABLE_KINDS
+        }
         self.gdrive_enabled = tk.BooleanVar(value=bool(cfg.get("gdrive_enabled", False)))
         self.gdrive_folder = tk.StringVar(value=cfg.get("gdrive_folder", "RKarrousel"))
         self.update_check = tk.BooleanVar(value=bool(cfg.get("update_check", True)))
@@ -91,10 +97,16 @@ class SettingsModel:
                     pass  # valeur illisible : on garde le réglage actuel
         if "frame_enabled" in values:
             self.no_frame.set(values["frame_enabled"] is False)
-        if "disabled_kinds" in values:
-            disabled = {str(kind) for kind in values["disabled_kinds"] or ()}
+        if "disabled_kinds" in values or "kind_placement" in values:
+            disabled = {str(kind) for kind in values["disabled_kinds"] or ()} if "disabled_kinds" in values else None
             for kind, var in self.kind_vars.items():
-                var.set(kind not in disabled)
+                if disabled is not None:
+                    var.set(kind not in disabled)
+            for kind, var in self.placements.items():
+                hidden = (kind in disabled) if disabled is not None else var.get() == "none"
+                place = placement_of(values, kind) if "kind_placement" in values else (
+                    var.get() if var.get() != "none" else placement_of({}, kind))
+                var.set("none" if hidden else place)
 
     def collect(self, cfg: dict) -> dict:
         """Recopie les réglages de l'écran dans `cfg` et renvoie `cfg`."""
@@ -112,7 +124,12 @@ class SettingsModel:
         cfg["background_color"] = self.background_color.get()
         cfg["background_color_mode"] = self._mode(self.background_color_mode)
         cfg["color_source"] = color_source_of({"color_source": self.color_source.get()})
-        cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()]
+        cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()] + [
+            kind for kind, var in self.placements.items() if var.get() == "none"
+        ]
+        cfg["kind_placement"] = {  # « aucune » garde la dernière place choisie, pour la retrouver si on réactive l'image
+            kind: var.get() if var.get() in PLACEMENTS else placement_of(cfg, kind) for kind, var in self.placements.items()
+        }
         cfg["blur_strength"] = var_value(self.blur_strength, DEFAULT_BLUR_STRENGTH)
         cfg["jpeg_quality"] = var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)
         cfg["output_format"] = self.output_format.get() if self.output_format.get() in OUTPUT_FORMATS else "3:4"

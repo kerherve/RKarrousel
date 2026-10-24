@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from rkarrousel.formats import OUTPUT_FORMATS, OUTPUT_WIDTHS
 from rkarrousel.gui.context import AppContext
-from rkarrousel.gui.settings_model import ALL_KINDS
+from rkarrousel.gui.settings_model import CHECKBOX_KINDS, PLACEMENT_CHOICES
 from rkarrousel.gui.widgets import ChoiceBox, HintLabel
 from rkarrousel.i18n import kind_setting_label, t
 
@@ -42,13 +42,21 @@ class OutputGroup(ttk.LabelFrame):
 
 
 class KindsGroup(ttk.LabelFrame):
-    """Types d'images produites pour chaque photo (cases à cocher)."""
+    """Types d'images produites pour chaque photo : cases à cocher, et pour les deux « photos entières » d'un paysage
+    une liste (avant / après le découpage, à la fin du carrousel, aucune)."""
 
     def __init__(self, parent, ctx: AppContext):
         super().__init__(parent, text=t("kinds_group"), padding=12)
+        model = ctx.model
         self.columnconfigure(1, weight=1)
-        for position, kind in enumerate(ALL_KINDS):
-            ttk.Checkbutton(self, text=kind_setting_label(kind), variable=ctx.model.kind_vars[kind]).grid(
+        for position, kind in enumerate(CHECKBOX_KINDS):
+            ttk.Checkbutton(self, text=kind_setting_label(kind), variable=model.kind_vars[kind]).grid(
                 row=position // 2, column=position % 2, sticky=tk.W, padx=(0, 24), pady=2
             )
-        HintLabel(self, t("kinds_hint")).grid(row=3, column=0, columnspan=2, sticky=tk.EW, pady=(6, 0))
+        row = (len(CHECKBOX_KINDS) + 1) // 2
+        labels = [t(f"placement_{choice}") for choice in PLACEMENT_CHOICES]
+        for offset, (kind, var) in enumerate(model.placements.items()):
+            ttk.Label(self, text=kind_setting_label(kind) + " :").grid(row=row + offset, column=0, sticky=tk.W, pady=(8, 0))
+            ChoiceBox(self, var, PLACEMENT_CHOICES, labels, width=34).grid(
+                row=row + offset, column=1, sticky=tk.W, padx=8, pady=(8, 0))
+        HintLabel(self, t("kinds_hint")).grid(row=row + 2, column=0, columnspan=2, sticky=tk.EW, pady=(8, 0))

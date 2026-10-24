@@ -8,7 +8,8 @@ from typing import Optional, Tuple
 RATIO_TOLERANCE = 0.03
 SQUARE_MIN_RATIO = 0.95   # en dessous : portrait « autre » ; entre les deux : quasi carré
 LANDSCAPE_MIN_RATIO = 1.3  # au-dessus : paysage « autre » (découpé en panorama)
-MAX_PANORAMA_PARTS = 10    # un carrousel Instagram ne dépasse pas 10 images
+INSTAGRAM_MAX_IMAGES = 20   # un carrousel Instagram ne dépasse pas 20 images
+MAX_PANORAMA_PARTS = INSTAGRAM_MAX_IMAGES  # un panorama découpé en tranches non plus
 OUTPUT_FORMATS = {"3:4": (3, 4), "4:5": (4, 5), "1:1": (1, 1), "9:16": (9, 16)}  # grille, feed, carré, stories
 DEFAULT_OUTPUT_FORMAT = "3:4"
 DEFAULT_TARGET = (3, 4)

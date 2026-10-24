@@ -24,6 +24,7 @@ par défaut (`config.py` valide chaque accès). Les chemins `/mnt/c/…` et `C:\
 | `disabled_kinds` | liste de types | `[]` | Types d'images non produits (`part1` règle la première tranche, `part2` les suivantes) |
 | `number_files` | `true` / `false` | `true` | Préfixer les fichiers `01_`, `02_`… |
 | `crop_offsets` | `{chemin: 0..1}` | `{}` | Zone conservée des recadrages, par photo |
+| `kind_placement` | `{part1_with_sig, part2_with_sig: before / inline / end}` | `before` pour la photo entière droite, `inline` pour la pivotée | Place des deux « photos entières » d'un paysage : avant le découpage, après (avec leur photo), ou à la fin du carrousel dans l'ordre des photos. « Aucune » = le type est dans `disabled_kinds` |
 | `photo_overrides` | `{chemin: {border_color_mode, border_color, border_tweak}}` | `{}` | Couleur du cadre propre à une photo : remplace le réglage général pour elle seule. `border_tweak` = `[teinte °, saturation, clarté]` (limites ± 30, 0,3 et 0,2), retouche fine d'une couleur tirée de la photo ; seules ces trois clés sont lues |
 | `presets` | `{nom: {clé: valeur}}` | `{}` | Préréglages de l'utilisateur (voir `presets.PRESET_KEYS` pour les clés mémorisées) |
 | `last_source_dir`, `last_dest_dir` | chemin | — | Derniers dossiers utilisés |

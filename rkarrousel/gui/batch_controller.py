@@ -34,6 +34,7 @@ class BatchController:
             messagebox.showwarning(t("dlg_no_dest_title"), t("dlg_no_dest"))
             return
         config = dict(ctx.collect_config())
+        session.sync_layout(config)
         ctx.save_config()
         self.batch_config = config
         files = session.selected_files()

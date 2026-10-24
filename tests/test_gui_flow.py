@@ -209,15 +209,25 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(len(names), 3)
         self.assertEqual([n[:2] for n in names], ["01", "02", "03"])
 
-    def test_order_grid_grows_with_the_window(self):
+    def test_a_wider_order_window_shows_more_columns(self):
         window = self.open_order_window(self.photos[:2])
         self.root.update()
-        base = window.layout.tile_w
-        window.geometry("1500x900")
-        self.pump(lambda: window.layout.tile_w > base)
-        self.assertEqual(window.grid_canvas.layout.tile_w, window.layout.tile_w)
-        window.geometry("700x900")
-        self.pump(lambda: window.layout.tile_w < 400)
+        base = window.layout.columns
+        window.geometry("1700x900")
+        self.pump(lambda: window.layout.columns > base)
+        self.assertEqual(window.grid_canvas.layout.columns, window.layout.columns)
+        window.geometry("500x900")
+        self.pump(lambda: window.layout.columns == base)
+
+    def test_order_window_warns_beyond_twenty_images(self):
+        photos = [make_image(self.dir, f"w{i}.jpg", (900, 1200)) for i in range(21)]  # 21 images (3/4 : une chacune)
+        window = self.open_order_window(photos)
+        self.pump(lambda: all(tile.thumb is not None for tile in window.tiles))
+        self.assertIn("20", window.warning.get())
+        self.assertIn("21", window.warning.get())
+        window.select(20)
+        window.toggle_exclude()  # on exclut la 21e : plus d'avertissement
+        self.assertEqual(window.warning.get(), "")
 
     def test_viewer_adjusts_frame_and_fill_live_and_refreshes_the_grid(self):
         from rkarrousel.gui import viewer as viewer_pkg

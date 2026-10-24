@@ -12,6 +12,7 @@ from PIL import Image
 from rkarrousel.config import config_for_photo, crop_offset_for, jpeg_quality_of
 from rkarrousel.formats import detect_ratio_type, output_format_of
 from rkarrousel.imaging.frames import open_image, save_image
+from rkarrousel.kinds import is_at_end
 from rkarrousel.outputs import finalize_size, item_key, iter_outputs, kinds_for_size, output_name
 
 logger = logging.getLogger("imagesplitter")
@@ -57,7 +58,8 @@ def planned_items(files: Sequence[Path], config: dict) -> List[Tuple[Path, str]]
             continue
         for kind in kinds:
             items.append((path, kind))
-    return items
+    # les images réglées sur « à la fin du carrousel » passent après toutes les photos (dans l'ordre des photos)
+    return [i for i in items if not is_at_end(config, i[1])] + [i for i in items if is_at_end(config, i[1])]
 
 
 def merge_order(order: Sequence[str], items: Sequence[Tuple[Path, str]]) -> List[str]:

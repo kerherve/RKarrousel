@@ -55,12 +55,10 @@ def save_image(img: Image.Image, output_path: Path, quality: int = DEFAULT_JPEG_
     img.save(output_path, **params)
 
 
-def measure_border(img: Image.Image, color, tolerance: int = 12, skip_color=None) -> int:
-    """Épaisseur (px) du cadre de la couleur donnée, mesurée depuis le bord haut au milieu de l'image.
-    `skip_color` : couleur d'un fond uni qui entoure le cadre (ignoré avant d'atteindre le cadre)."""
+def measure_border(img: Image.Image, color, tolerance: int = 12) -> int:
+    """Épaisseur (px) du cadre de la couleur donnée, mesurée depuis le bord haut au milieu de l'image."""
     rgb = img.convert("RGB")
     color = tuple(color)
-    skip = tuple(skip_color) if skip_color is not None else None
     x = rgb.width // 2
 
     def close(pixel, target):
@@ -71,8 +69,6 @@ def measure_border(img: Image.Image, color, tolerance: int = 12, skip_color=None
         pixel = rgb.getpixel((x, y))
         if close(pixel, color):
             count += 1
-        elif count == 0 and skip is not None and close(pixel, skip):
-            continue
         else:
             break
     return count

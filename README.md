@@ -22,7 +22,7 @@ L'appli recherche ensuite elle-même les nouvelles versions au démarrage et se 
 | Déjà au format de sortie (3:4 par défaut) | Une image encadrée, au format exact |
 | Portrait 2:3, autre portrait, carré | La photo entière sur un fond au format, et un recadrage réglable |
 | Paysage 3:2 | Deux moitiés encadrées d'un panorama, plus la photo entière droite et pivotée |
-| Autre paysage, panorama | Le panorama découpé en tranches contiguës (10 au maximum), la photo entière et un recadrage |
+| Autre paysage, panorama | Le panorama découpé en tranches contiguës (20 au maximum), la photo entière et un recadrage |
 
 Formats 3:4, 4:5, 1:1 et 9:16 ; largeur d'origine ou 1080/1440/2048 px ; **préréglages** nommés ; cadre et fond dont la
 **couleur est tirée de chaque photo** ; grille d'aperçu façon Instagram pour choisir l'ordre ; numérotation `01_`, `02_`… ;

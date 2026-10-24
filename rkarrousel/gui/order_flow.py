@@ -25,10 +25,12 @@ class OrderController:
         if not files:
             messagebox.showwarning(t("dlg_no_file_title"), t("status_no_image"))
             return
+        config = dict(ctx.collect_config())
+        session.sync_layout(config)  # la place des photos entières a pu changer : l'ordre naturel est recalculé
         self.window = OrderWindow(
             ctx.root,
             files,
-            dict(ctx.collect_config()),
+            config,
             session.order,
             session.preview_cache,
             dark=ctx.theme.dark,

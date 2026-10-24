@@ -52,7 +52,11 @@ Each photo gives one or more images, in the chosen output format (3:4 by default
 - Photo already in the output format: one framed image (`_framed`). It is trimmed by less than 1% so that, frame included, the format is exact.
 - 2:3 portrait, other portrait or square: the whole photo on a background of the right format (`_with_sig`, or `_framed` without a signature) and an adjustable crop (`_crop34`).
 - 3:2 landscape: the two framed halves of a panorama (`_part1`, `_part2`), the whole photo (`_part1_with_sig`) and the same rotated (`_part2_with_sig`).
-- Other landscape or panorama: the panorama cut into contiguous slices (`_part1` to `_partN`, 10 at most), the whole photo upright and rotated, and a crop.
+- Other landscape or panorama: the panorama cut into contiguous slices (`_part1` to `_partN`, 20 at most), the whole photo upright and rotated, and a crop.
+
+With a solid background (black by default) as with a blurred one, the frame surrounds the whole image, at its edge; the whole photo sits inside it.
+
+Order in the carousel: for a landscape, the whole photo comes before the slices by default. Settings -> "Images produced for each photo" lets you place each of the two whole photos (upright and rotated) before or after the split, at the end of the carousel (in photo order), or remove it.
 
 > **Note** — Panorama slices reassemble without a double border: the frame only surrounds the top, the bottom and the two ends.
 
@@ -124,7 +128,8 @@ Settings -> "Generated files":
 
 The "Preview and order..." button shows the final rendering of every image in a three-column grid, like an Instagram profile.
 
-- The window can be enlarged: the grid keeps its three columns (like an Instagram profile) and the images grow to fill the width.
+- Enlarge the window to see more images at once: the grid adds columns (three at minimum, like an Instagram profile) and the order reads left to right, row after row.
+- Instagram limits a carousel to 20 images: beyond that, an orange warning appears at the top and the numbers of images 21 onwards turn red. Exclude some or split them across several posts.
 - Drag an image to move it: the pieces of one photo can be separated.
 - The blue number is the one that will prefix the file (see "File numbering").
 - The cross at the top right of an image excludes it (it is neither generated nor numbered); the undo arrow brings it back.
@@ -208,6 +213,6 @@ Settings -> "Google Drive": tick "Upload images to Google Drive after processing
 
 - A summary is shown at the end of processing: it lists photos in error or skipped, with the reason.
 - The log `image_splitter.log` is next to the executable (its location is shown in "About").
-- "Format too panoramic": a very wide photo would give more than 10 images; crop it in your photo software.
+- "Format too panoramic": a very wide photo would give more than 20 images (an Instagram carousel's limit); crop it in your photo software.
 - To start from scratch, close the app and delete the `.image_splitter_config.json` file next to the executable.
 - To process photos without the interface: `python -m rkarrousel.cli` (see the project documentation).

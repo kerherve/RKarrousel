@@ -15,7 +15,7 @@ Le principe directeur : **la logique d'image ne connaît ni Tkinter ni le disque
 | `paths.py` | Emplacements des fichiers (config, journal, jeton Drive), à côté de l'exécutable une fois compilé |
 | `config.py` | Lecture/écriture du JSON de réglages, valeurs par défaut, accesseurs qui **valident** chaque réglage |
 | `formats.py` | Formats de sortie (3:4, 4:5, 1:1, 9:16), largeurs, détection du type de ratio d'une photo, nombre de tranches d'un panorama |
-| `kinds.py` | Les « types » d'images produites (`framed`, `with_sig`, `part1`…, `crop34`) |
+| `kinds.py` | Les « types » d'images produites (`framed`, `with_sig`, `part1`…, `crop34`) et la place des deux « photos entières » d'un paysage dans le carrousel (avant / après le découpage, à la fin) |
 | `outputs.py` | Quelles images produire pour une photo (`kinds_for_ratio`), leur rendu (`iter_outputs`), taille finale, noms de fichiers |
 | `pipeline.py` | Traitement d'un lot : découverte des fichiers, ordre, numérotation, écriture, parallélisme, annulation |
 | `presets.py` | Préréglages nommés (fournis + ceux de l'utilisateur dans la config) |
@@ -62,7 +62,7 @@ exclusions et le préfixe numérique (`01_`) s'expriment tous avec ces clés (`p
 - `files_tab.py`, `summary.py` : liste des photos, aperçu, récapitulatif de fin de traitement.
 - `events.py` : **bus d'événements**. Les threads de travail y *postent* des messages ; seul le thread Tk les distribue. Aucun widget n'est touché hors du thread Tk.
 - `batch_controller`, `drive_controller`, `update_controller`, `order_flow` : un contrôleur par fonction, chacun porte son propre thread et ses messages.
-- `order/` : la grille « Aperçu et ordre », en cinq pièces — `grid_layout` (géométrie), `model` (ordre et exclusions), `thumbnails` (rendu des vignettes en arrière-plan), `grid_canvas` (dessin et glisser-déposer), `window`.
+- `order/` : la grille « Aperçu et ordre » (les vignettes gardent leur taille, une fenêtre plus large ajoute des colonnes ; avertissement au-delà de 20 images, `formats.INSTAGRAM_MAX_IMAGES`), en cinq pièces — `grid_layout` (géométrie), `model` (ordre et exclusions), `thumbnails` (rendu des vignettes en arrière-plan), `grid_canvas` (dessin et glisser-déposer), `window`.
 - `viewer/` : la visionneuse « Voir en grand », en pièces — `viewport` (zoom et déplacement, sans Tk), `render_jobs` (calculs en arrière-plan, avec numéro de génération pour ignorer les résultats périmés), `carousel` (voisines, défilement à la souris, animation), `ruler` (mesure en pixels), `toolbar`, `frame_report` (couleur et épaisseur du cadre obtenus), `settings_panel` (réglages en direct), `window` (assemble le tout). Les voisines et l'aperçu de la nouvelle image viennent d'abord du cache d'aperçus de la grille (instantané) ; la pleine résolution n'est calculée qu'une fois qu'on s'arrête.
 - `photo_frame_group.py` : couleur du cadre propre à une photo, couleur obtenue et retouche fine (utilisé par la visionneuse).
 - `crop_editor.py`, `guide_window.py`, `update_dialog.py` : fenêtres secondaires.

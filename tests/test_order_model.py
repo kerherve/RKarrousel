@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from rkarrousel.gui.order.grid_layout import COLUMNS, GridLayout
+from rkarrousel.gui.order.grid_layout import MIN_COLUMNS as COLUMNS, GridLayout
 from rkarrousel.gui.order.model import OrderModel, cache_key, render_signature
 from rkarrousel.outputs import item_key
 from tests.helpers import make_image
@@ -84,22 +84,30 @@ class OrderModelTests(unittest.TestCase):
 
 
 class GridLayoutTests(unittest.TestCase):
-    def test_tiles_grow_with_the_window_but_stay_three_columns(self):
+    def test_a_wider_window_shows_more_columns_with_the_same_tiles(self):
         layout = GridLayout(1.0, (3, 4))
-        base = layout.tile_w
-        self.assertFalse(layout.fit_width(100))  # jamais plus petit que la taille de base
-        self.assertEqual(layout.tile_w, base)
+        tile_w, tile_h = layout.tile_w, layout.tile_h
+        self.assertEqual(layout.columns, COLUMNS)
+        self.assertFalse(layout.fit_width(100))  # jamais moins de trois colonnes
         self.assertTrue(layout.fit_width(1500))
-        self.assertGreater(layout.tile_w, base)
+        self.assertGreater(layout.columns, COLUMNS)
         self.assertLessEqual(layout.canvas_width, 1500)
-        self.assertGreaterEqual(layout.canvas_width, 1500 - COLUMNS)  # les trois colonnes remplissent la largeur
-        self.assertAlmostEqual(layout.tile_h / layout.tile_w, 4 / 3, places=2)
-        self.assertEqual(layout.tile_at(layout.slot_origin(5)[0] + 1, layout.slot_origin(5)[1] + 1, 9), 5)
+        self.assertGreater(layout.canvas_width, 1500 - layout.tile_w - layout.gap)  # on remplit la largeur, à une case près
+        self.assertEqual((layout.tile_w, layout.tile_h), (tile_w, tile_h))  # la taille des vignettes ne change pas
         self.assertFalse(layout.fit_width(1500))  # même largeur : rien à refaire
 
-    def test_thumbnails_are_large_enough_for_a_wide_window(self):
+    def test_order_reads_left_to_right_then_down_whatever_the_column_count(self):
         layout = GridLayout(1.0, (3, 4))
-        self.assertGreaterEqual(layout.max_thumb_size()[0], 800)
+        layout.fit_width(1500)
+        columns = layout.columns
+        x0, y0 = layout.slot_origin(columns)  # première case de la 2e ligne
+        self.assertEqual(x0, layout.gap)
+        self.assertGreater(y0, layout.gap)
+        x, y = layout.slot_origin(columns - 1)  # dernière colonne de la 1re ligne
+        self.assertEqual(layout.tile_at(x + 1, y + 1, columns * 2), columns - 1)
+        self.assertEqual(layout.tile_at(x0 + 1, y0 + 1, columns * 2), columns)
+        self.assertEqual(layout.slot_at(10_000, 0, columns * 2), columns - 1)  # la cible reste dans la grille
+        self.assertEqual(layout.content_height(columns + 1), layout.gap + 2 * (layout.tile_h + layout.gap))
 
     def test_tile_shape_follows_the_output_format(self):
         self.assertAlmostEqual(GridLayout(1.0, (3, 4)).tile_h / GridLayout(1.0, (3, 4)).tile_w, 4 / 3, places=2)

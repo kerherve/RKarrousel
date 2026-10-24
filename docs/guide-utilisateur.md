@@ -52,7 +52,11 @@ Chaque photo donne une ou plusieurs images, au format de sortie choisi (3:4 par 
 - Photo déjà au format de sortie : une image encadrée (`_framed`). Elle est rognée de moins de 1 % pour que, cadre compris, le format soit exact.
 - Portrait 2:3, autre portrait ou carré : la photo entière sur un fond au format (`_with_sig`, ou `_framed` sans signature) et un recadrage réglable (`_crop34`).
 - Paysage 3:2 : les deux moitiés encadrées d'un panorama (`_part1`, `_part2`), la photo entière (`_part1_with_sig`) et la même pivotée (`_part2_with_sig`).
-- Autre paysage ou panorama : le panorama découpé en tranches contiguës (`_part1` à `_partN`, 10 au maximum), la photo entière droite et pivotée, et un recadrage.
+- Autre paysage ou panorama : le panorama découpé en tranches contiguës (`_part1` à `_partN`, 20 au maximum), la photo entière droite et pivotée, et un recadrage.
+
+Avec un fond uni (noir par défaut) comme avec un fond flouté, le cadre entoure toute l'image, au bord ; la photo entière est posée à l'intérieur.
+
+Ordre dans le carrousel : pour un paysage, la photo entière vient par défaut avant les tranches. Réglages → « Images produites pour chaque photo » permet de placer chacune des deux photos entières (droite et pivotée) avant ou après le découpage, à la fin du carrousel (dans l'ordre des photos), ou de la supprimer.
 
 > **Remarque** — Les tranches d'un panorama se recomposent sans double bordure : le cadre n'entoure que le haut, le bas et les deux extrémités.
 
@@ -124,7 +128,8 @@ Réglages → « Fichiers générés » :
 
 Le bouton « Aperçu et ordre… » affiche le rendu final de chaque image dans une grille de trois colonnes, comme un profil Instagram.
 
-- La fenêtre peut être agrandie : la grille garde ses trois colonnes (comme un profil Instagram) et les images grandissent pour remplir la largeur.
+- Agrandissez la fenêtre pour voir plus d'images à la fois : la grille ajoute des colonnes (trois au minimum, comme un profil Instagram) et l'ordre se lit de gauche à droite, ligne après ligne.
+- Instagram limite un carrousel à 20 images : au-delà, un avertissement orange apparaît en haut et les numéros des images 21 et suivantes passent en rouge. Excluez-en ou répartissez-les en plusieurs publications.
 - Glissez une image pour la déplacer : les morceaux d'une même photo peuvent être séparés.
 - Le numéro bleu est celui qui préfixera le fichier (voir « Numérotation des fichiers »).
 - La croix en haut à droite d'une image l'exclut (elle n'est ni générée ni numérotée) ; ↺ la réintègre.
@@ -208,6 +213,6 @@ Réglages → « Google Drive » : cochez « Envoyer les images sur Google Drive
 
 - Un récapitulatif s'affiche à la fin du traitement : il liste les photos en erreur ou ignorées, avec la raison.
 - Le journal `image_splitter.log` est à côté de l'exécutable (son emplacement est indiqué dans « À propos »).
-- « Format trop panoramique » : une photo très large donnerait plus de 10 images ; recadrez-la dans votre logiciel photo.
+- « Format trop panoramique » : une photo très large donnerait plus de 20 images (la limite d'un carrousel Instagram) ; recadrez-la dans votre logiciel photo.
 - Pour repartir de zéro, fermez l'appli et supprimez le fichier `.image_splitter_config.json` à côté de l'exécutable.
 - Pour traiter des photos sans l'interface : `python -m rkarrousel.cli` (voir la documentation du projet).

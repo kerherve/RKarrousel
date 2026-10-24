@@ -64,33 +64,16 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
             target=output_format_of(config),
         )
 
-    signed = add_signature_to_image(img, sig_path, position=position, user_scale=sig_scale)
-
-    src_w, src_h = signed.size
-    border_px = border_px_for(min(src_w, src_h), frame_ratio_of(config))
-    framed = frame_image(signed, border_px, color)
-
-    min_width = framed.width
-    min_height = framed.height
-
-    # Place the framed photo onto a canvas of the output format (3/4 by default)
-    tw, th = output_format_of(config)
-    if min_width * th >= min_height * tw:
-        portrait_width = min_width
-        portrait_height = int(round(portrait_width * th / tw))
-    else:
-        portrait_height = min_height
-        portrait_width = int(round(portrait_height * tw / th))
-
-    # Keep the final canvas at least as large as the framed image
-    portrait_width = max(portrait_width, min_width)
-    portrait_height = max(portrait_height, min_height)
-
-    background = Image.new("RGB", (portrait_width, portrait_height), background_color_of(config))
-    x_offset = (portrait_width - framed.width) // 2
-    y_offset = (portrait_height - framed.height) // 2
-    background.paste(framed, (x_offset, y_offset))
-    return background
+    return create_portrait_with_landscape_content(
+        img,
+        sig_path,
+        frame_ratio=frame_ratio_of(config),
+        border_color=color,
+        sig_position=position,
+        sig_scale=sig_scale,
+        background_color=background_color_of(config),
+        target=output_format_of(config),
+    )
 
 
 def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP_OFFSET) -> Image.Image:
@@ -113,6 +96,17 @@ def render_crop_3_4(img: Image.Image, config: dict, offset: float = DEFAULT_CROP
     return frame_image(img.crop(box), border, border_color_of(config))
 
 
+def _content_size(src_w: int, src_h: int, frame_ratio: float, target: Tuple[int, int]) -> Tuple[int, int]:
+    """Taille du fond (avant le cadre) qui contient la photo telle quelle, sur l'axe où elle est courte : une fois
+    le cadre ajouté symétriquement tout autour, l'image a EXACTEMENT le format de sortie. La taille est donc résolue
+    pour pré-compenser le cadre ((largeur + 2b) / (hauteur + 2b) = tw / th), comme pour les autres images."""
+    tw, th = target
+    extra = th + 2 * frame_ratio * (th - tw)
+    if src_w / src_h >= tw / th:
+        return src_w, max(int(round(src_w * extra / tw)), src_h)
+    return max(int(round(src_h * tw / extra)), src_w), src_h
+
+
 def create_portrait_with_landscape_content(
     img: Image.Image,
     signature_path: Optional[Path],
@@ -124,41 +118,22 @@ def create_portrait_with_landscape_content(
     target: Tuple[int, int] = DEFAULT_TARGET,
 ) -> Image.Image:
     """
-    Crée une image au format de sortie (3/4 par défaut) avec l'image paysage complète centrée, signée, encadrée et placée sur fond uni (noir par défaut).
+    Crée une image au format de sortie (3/4 par défaut) : la photo entière, signée, centrée sur un fond uni (noir par
+    défaut), puis le cadre autour de l'ENSEMBLE du canevas (comme avec le fond flouté : le cadre est au bord de
+    l'image, pas autour de la photo seule).
     """
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    # Sign before scaling/framing so the signature stays anchored to the
-    # photo's own corner (not the page corner), and scales/rotates with it.
+    # La signature est posée avant tout, dans le coin de la photo elle-même (pas de la page).
     signed = add_signature_to_image(img, signature_path, position=sig_position, user_scale=sig_scale)
     src_w, src_h = signed.size
-    border_px = border_px_for(min(src_w, src_h), frame_ratio)
+    content_width, content_height = _content_size(src_w, src_h, frame_ratio, target)
 
-    # determine the canvas size (output format) to fit the source image plus frame
-    tw, th = target
-    portrait_width = max(src_w + 2 * border_px, int(round((src_h + 2 * border_px) * tw / th)))
-    portrait_height = int(round(portrait_width * th / tw))
-
-    inner_w = portrait_width - 2 * border_px
-    inner_h = portrait_height - 2 * border_px
-
-    scaled_w = src_w
-    scaled_h = src_h
-    if src_w > inner_w or src_h > inner_h:
-        scale = min(inner_w / src_w, inner_h / src_h)
-        scaled_w = max(1, int(round(src_w * scale)))
-        scaled_h = max(1, int(round(src_h * scale)))
-
-    signed_scaled = signed.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
-    framed = frame_image(signed_scaled, border_px, border_color)
-
-    background = Image.new("RGB", (portrait_width, portrait_height), background_color)
-    x_offset = (portrait_width - framed.width) // 2
-    y_offset = (portrait_height - framed.height) // 2
-    background.paste(framed, (x_offset, y_offset))
-
-    return background
+    canvas = Image.new("RGB", (content_width, content_height), background_color)
+    canvas.paste(signed, ((content_width - src_w) // 2, (content_height - src_h) // 2))
+    border_px = border_px_for(min(content_width, content_height), frame_ratio)
+    return frame_image(canvas, border_px, border_color)
 
 
 def create_portrait_with_landscape_blur_fill(
@@ -188,22 +163,8 @@ def create_portrait_with_landscape_blur_fill(
 
     src_w, src_h = img.size
 
-    # Extend on whichever axis the source photo is short on, so the final
-    # canvas is exactly 3/4 regardless of how wide or narrow the photo is.
-    # frame_image() adds the border symmetrically afterwards, which nudges a
-    # content canvas that's exactly 3/4 up towards square (same effect as in
-    # split_2_3_to_3_4) -- so the content size is solved to pre-compensate for
-    # that border and land on exactly 3/4 once framed, matching the other 3/4
-    # outputs pixel-for-pixel in proportion.
-    tw, th = target
-    target_ratio = tw / th
-    extra = th + 2 * frame_ratio * (th - tw)  # pré-compense le cadre : (largeur+2b)/(hauteur+2b) = tw/th
-    if src_w / src_h >= target_ratio:
-        content_width = src_w
-        content_height = max(int(round(content_width * extra / tw)), src_h)
-    else:
-        content_height = src_h
-        content_width = max(int(round(content_height * tw / extra)), src_w)
+    # On étend sur l'axe où la photo est courte : le canevas final a exactement le format de sortie, cadre compris.
+    content_width, content_height = _content_size(src_w, src_h, frame_ratio, target)
 
     # Cover-fit the (unsigned) photo over the content canvas, then blur it.
     scale = max(content_width / img.width, content_height / img.height)

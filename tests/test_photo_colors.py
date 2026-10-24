@@ -80,7 +80,8 @@ class RenderTests(unittest.TestCase):
         src = make_image(self.dir, "land.jpg", (900, 600), (20, 120, 60))
         config = {"landscape_fill_mode": "black", "background_color_mode": "dominant", "frame_ratio": 0.03}
         img = produce.render_output(src, config, "part1_with_sig")
-        self.assertEqual(img.getpixel((0, 0)), (20, 120, 60))
+        self.assertEqual(img.getpixel((img.width // 2, img.height // 10)), (20, 120, 60))  # bande de fond, sous le cadre
+        self.assertEqual(img.getpixel((0, 0)), (255, 255, 255))  # le cadre entoure toute l'image
 
     def test_every_output_of_a_photo_shares_its_color(self):
         src = make_image(self.dir, "land.jpg", (900, 600), (200, 100, 30))

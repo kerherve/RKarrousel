@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from PIL import Image
 
-from rkarrousel.formats import output_format_of
+from rkarrousel.formats import INSTAGRAM_MAX_IMAGES, output_format_of
 from rkarrousel.gui.crop_editor import CropEditor
 from rkarrousel.gui.viewer import ImageViewer
 from rkarrousel.gui.order.grid_canvas import GridCanvas
@@ -41,7 +41,7 @@ class OrderWindow(tk.Toplevel):
         self.settings_ctx = settings_ctx  # contexte de l'appli : la visionneuse y règle cadre et fond
         self.layout = GridLayout(scale, output_format_of(config))
         self.model = OrderModel(files, excluded)
-        self.thumbs = ThumbnailService(cache, self.layout.max_thumb_size())  # assez grandes pour une fenêtre très large
+        self.thumbs = ThumbnailService(cache, (self.layout.tile_w * 2, self.layout.tile_h * 2))  # marge pour un affichage net
         self._closing = False
 
         self.title(t("order_title"))
@@ -79,7 +79,12 @@ class OrderWindow(tk.Toplevel):
         hint.pack(fill=tk.X)
         hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(200, e.width - 4)))  # suit la largeur de la fenêtre
         self.status = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=self.status, style="Hint.TLabel").pack(fill=tk.X, pady=(4, 8))
+        ttk.Label(frame, textvariable=self.status, style="Hint.TLabel").pack(fill=tk.X, pady=(4, 0))
+        self.warning = tk.StringVar(value="")  # avertissement : plus de 20 images (limite d'un carrousel Instagram)
+        warning = ttk.Label(frame, textvariable=self.warning, foreground="#f0a030", justify=tk.LEFT,
+                            font=("Segoe UI", 10, "bold"), wraplength=layout.canvas_width)
+        warning.pack(fill=tk.X, pady=(2, 8))
+        warning.bind("<Configure>", lambda e: warning.configure(wraplength=max(200, e.width - 4)))
 
         body = ttk.Frame(frame)
         body.pack(fill=tk.BOTH, expand=True)
@@ -147,6 +152,11 @@ class OrderWindow(tk.Toplevel):
             self.status.set(t("order_count_excluded", total=total, excluded=excluded))
         else:
             self.status.set(t("order_count", total=total))
+        included = total - excluded
+        self.warning.set(
+            t("order_too_many", count=included, limit=INSTAGRAM_MAX_IMAGES, first=INSTAGRAM_MAX_IMAGES + 1)
+            if included > INSTAGRAM_MAX_IMAGES else ""
+        )
 
     def _update_buttons(self) -> None:
         tile = self.model.selected_tile()

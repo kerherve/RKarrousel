@@ -17,7 +17,7 @@ from rkarrousel.imaging.canvases import render_crop_3_4, render_portrait_2_3, re
 from rkarrousel.imaging.colors import resolve_photo_colors
 from rkarrousel.imaging.frames import open_image
 from rkarrousel.imaging.panorama import iter_landscape_other, iter_split_2_3_to_3_4
-from rkarrousel.kinds import KIND_CROP, OPTIONAL_KINDS
+from rkarrousel.kinds import KIND_CROP, PLACEABLE_KINDS, arrange
 
 
 def _main_kind(config: dict) -> str:
@@ -34,14 +34,15 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict, size: Optional[Tupl
     if ratio_type in ("portrait_2_3", "portrait_other", "square"):
         return [_main_kind(config)] + crop
     if ratio_type == "landscape_2_3":
-        return [kind for kind in OPTIONAL_KINDS if kind not in disabled]
+        slices = [kind for kind in ("part1", "part2") if kind not in disabled]
+        return arrange(slices, [kind for kind in PLACEABLE_KINDS if kind not in disabled], [], config)
     if ratio_type == "landscape_other":
         parts = panorama_parts(*size, output_format_of(config)) if size else 2
         slices = [f"part{i}" for i in range(1, parts + 1)]
         # « part1 » règle la première tranche, « part2 » toutes les suivantes
         slices = [k for k in slices if k not in disabled and not (int(k[4:]) >= 2 and "part2" in disabled)]
-        full = [k for k in ("part1_with_sig", "part2_with_sig") if k not in disabled]
-        return slices + full + crop
+        full = [k for k in PLACEABLE_KINDS if k not in disabled]
+        return arrange(slices, full, crop, config)
     return []
 
 

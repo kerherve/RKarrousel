@@ -120,13 +120,14 @@ class ExclusionAndColorTests(unittest.TestCase):
         pipeline.process_batch([self.land], self.out, {"frame_ratio": 0.03}, number_files=True, excluded=excluded)
         self.assertEqual(
             sorted(p.name for p in self.out.iterdir()),
-            ["01_l_part1.jpg", "02_l_part2.jpg", "03_l_part1_with_sig.jpg"],
+            ["01_l_part1_with_sig.jpg", "02_l_part1.jpg", "03_l_part2.jpg"],  # la photo entière d'abord
         )
 
     def test_numbering_skips_excluded_in_the_middle(self):
         excluded = {produce.item_key(self.land, "part2")}
         pipeline.process_batch([self.land], self.out, {"frame_ratio": 0.03}, number_files=True, excluded=excluded)
-        self.assertIn("02_l_part1_with_sig.jpg", {p.name for p in self.out.iterdir()})
+        self.assertEqual(  # photo entière, tranche 1, (tranche 2 exclue), photo pivotée : numérotation sans trou
+            {p.name for p in self.out.iterdir()}, {"01_l_part1_with_sig.jpg", "02_l_part1.jpg", "03_l_part2_with_sig.jpg"})
 
     def test_all_excluded_file_is_reported_as_excluded(self):
         every = {produce.item_key(self.land, k) for k in kinds.OPTIONAL_KINDS}
@@ -136,8 +137,8 @@ class ExclusionAndColorTests(unittest.TestCase):
 
     def test_disabled_kinds_are_neither_planned_nor_rendered(self):
         config = {"disabled_kinds": ["part2_with_sig", "part1"]}
-        self.assertEqual(produce.kinds_for_ratio("landscape_2_3", config), ["part2", "part1_with_sig"])
-        self.assertEqual([k for k, _ in produce.render_outputs(self.land, config)], ["part2", "part1_with_sig"])
+        self.assertEqual(produce.kinds_for_ratio("landscape_2_3", config), ["part1_with_sig", "part2"])
+        self.assertEqual(sorted(k for k, _ in produce.render_outputs(self.land, config)), ["part1_with_sig", "part2"])
 
     def test_render_output_returns_one_kind_or_none(self):
         self.assertIsNotNone(produce.render_output(self.land, {}, "part2"))
@@ -146,11 +147,11 @@ class ExclusionAndColorTests(unittest.TestCase):
     def test_solid_background_color_is_applied(self):
         config = {"frame_ratio": 0.03, "landscape_fill_mode": "black", "background_color": "#00FF00"}
         img = produce.render_output(self.land, config, "part1_with_sig")
-        self.assertEqual(img.getpixel((0, 0)), (0, 255, 0))
+        self.assertEqual(img.getpixel((img.width // 2, img.height // 10)), (0, 255, 0))  # bande de fond, sous le cadre
 
     def test_default_background_is_still_black(self):
         img = produce.render_output(self.land, {"frame_ratio": 0.03}, "part1_with_sig")
-        self.assertEqual(img.getpixel((0, 0)), (0, 0, 0))
+        self.assertEqual(img.getpixel((img.width // 2, img.height // 10)), (0, 0, 0))
 
     def test_measure_border(self):
         src = make_image(self.dir, "p.jpg", (600, 800))
@@ -159,12 +160,25 @@ class ExclusionAndColorTests(unittest.TestCase):
         self.assertEqual(frames.measure_border(img, (255, 255, 255)), formats.border_px_for(crop_w, 0.05))
 
 
-    def test_measure_border_skips_a_solid_background(self):
-        config = {"frame_ratio": 0.03, "landscape_fill_mode": "black", "background_color": "#1E3A5F"}
-        img = produce.render_output(self.land, config, "part1_with_sig")
-        measured = frames.measure_border(img, (255, 255, 255), skip_color=conf.background_color_of(config))
-        self.assertGreater(measured, 0)
-        self.assertEqual(frames.measure_border(img, (255, 255, 255)), 0)
+    def test_the_frame_surrounds_the_whole_image_on_a_solid_background_like_on_a_blurred_one(self):
+        for fill in ("black", "blur"):
+            config = {"frame_ratio": 0.03, "landscape_fill_mode": fill, "background_color": "#1E3A5F"}
+            img = produce.render_output(self.land, config, "part1_with_sig")
+            self.assertEqual(img.getpixel((0, 0)), (255, 255, 255), fill)                 # cadre au bord de l'image
+            self.assertEqual(img.getpixel((img.width - 1, img.height - 1)), (255, 255, 255), fill)
+            self.assertGreater(frames.measure_border(img, (255, 255, 255)), 0, fill)
+        black = produce.render_output(self.land, {"frame_ratio": 0.03, "landscape_fill_mode": "black"}, "part1_with_sig")
+        blur = produce.render_output(self.land, {"frame_ratio": 0.03, "landscape_fill_mode": "blur"}, "part1_with_sig")
+        self.assertEqual(black.size, blur.size)  # même format exact, même épaisseur de cadre
+        self.assertEqual(frames.measure_border(black, (255, 255, 255)), frames.measure_border(blur, (255, 255, 255)))
+
+    def test_a_2_3_portrait_on_a_solid_background_is_framed_all_around_and_keeps_the_exact_format(self):
+        src = make_image(self.dir, "p23.jpg", (600, 900))
+        for fmt in ("3:4", "4:5", "1:1", "9:16"):
+            img = produce.render_output(src, {"frame_ratio": 0.03, "output_format": fmt, "signature_path": ""}, "framed")
+            tw, th = formats.OUTPUT_FORMATS[fmt]
+            self.assertAlmostEqual(img.width / img.height, tw / th, delta=0.004, msg=fmt)
+            self.assertEqual(img.getpixel((0, 0)), (255, 255, 255), fmt)
 
 
 class CropTests(unittest.TestCase):
@@ -249,13 +263,13 @@ class AnyFormatTests(unittest.TestCase):
         self.assertEqual(produce.kinds_for_size(800, 1000, {"signature_path": "s.png"}), ["with_sig", "crop34"])
         self.assertEqual(
             produce.kinds_for_size(1600, 900, {}),
-            ["part1", "part2", "part3", "part1_with_sig", "part2_with_sig", "crop34"],
+            ["part1_with_sig", "part1", "part2", "part3", "part2_with_sig", "crop34"],
         )
 
     def test_disabled_kinds_apply_to_panorama_parts(self):
         config = {"disabled_kinds": ["part2", "crop34"]}  # part2 règle toutes les tranches après la première
-        self.assertEqual(produce.kinds_for_size(1600, 900, config), ["part1", "part1_with_sig", "part2_with_sig"])
-        self.assertEqual(produce.kinds_for_size(1600, 900, {"disabled_kinds": ["part1"]})[0], "part2")
+        self.assertEqual(produce.kinds_for_size(1600, 900, config), ["part1_with_sig", "part1", "part2_with_sig"])
+        self.assertEqual(produce.kinds_for_size(1600, 900, {"disabled_kinds": ["part1"]})[1], "part2")
 
     def test_every_output_of_every_format_is_3_4(self):
         for size in ((1000, 1000), (800, 1000), (900, 1600), (1200, 900), (1600, 900), (3000, 1000), (1250, 1000)):
@@ -411,7 +425,7 @@ class OutputFormatTests(unittest.TestCase):
 
     def test_a_3_2_photo_uses_the_generic_panorama_in_other_formats(self):
         kinds = produce.kinds_for_size(1500, 1000, {"output_format": "4:5"})
-        self.assertEqual(kinds, ["part1", "part2", "part1_with_sig", "part2_with_sig", "crop34"])
+        self.assertEqual(kinds, ["part1_with_sig", "part1", "part2", "part2_with_sig", "crop34"])
 
     def test_batch_writes_sized_files_with_the_format_suffix(self):
         src = make_image(self.dir, "p23.jpg", (2000, 3000))

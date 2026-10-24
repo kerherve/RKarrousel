@@ -6,6 +6,7 @@ from typing import Callable, Optional
 from PIL import ImageTk
 
 from rkarrousel.gui.order.grid_layout import GridLayout
+from rkarrousel.formats import INSTAGRAM_MAX_IMAGES
 from rkarrousel.gui.order.model import OrderModel, Tile
 from rkarrousel.i18n import kind_label, t
 
@@ -63,16 +64,14 @@ class GridCanvas(tk.Canvas):
             self._fit_job = None
 
     def _on_configure(self, event) -> None:
-        """La fenêtre change de taille : les vignettes s'agrandissent pour garder les trois colonnes pleine largeur
-        (on attend la fin du geste pour ne pas tout redessiner à chaque pixel)."""
+        """La fenêtre change de taille : la grille ajoute ou retire des colonnes (on attend la fin du geste pour ne pas
+        tout redessiner à chaque pixel)."""
         self._cancel_fit()
         self._fit_job = self.after(120, lambda: self.fit_to_width(event.width))
 
     def fit_to_width(self, width: int) -> None:
         self._fit_job = None
         if self.layout.fit_width(width):
-            for tile in self.model.tiles:
-                tile.photo = None  # les images affichées dépendent de la taille des cases
             self.redraw()
 
     # ------------------------------------------------------------------ dessin
@@ -114,9 +113,10 @@ class GridCanvas(tk.Canvas):
             self.create_text(cx, cy + int(26 * s), text=t("order_excluded"), fill="#ffffff", font=("Segoe UI", 10, "bold"))
         # numéro d'ordre (celui qui préfixera le fichier) ; les images exclues ne sont pas numérotées
         m, d = int(8 * s), int(30 * s)
-        self.create_oval(x + m, y + m, x + m + d, y + m + d, fill="#6b6b6b" if tile.excluded else "#0095f6",
-                         outline="#ffffff", width=2)
-        self.create_text(x + m + d // 2, y + m + d // 2, text="–" if tile.excluded else str(self.model.number_of(index)),
+        number = self.model.number_of(index)
+        badge = "#6b6b6b" if tile.excluded else ("#e53935" if number > INSTAGRAM_MAX_IMAGES else "#0095f6")  # rouge : trop
+        self.create_oval(x + m, y + m, x + m + d, y + m + d, fill=badge, outline="#ffffff", width=2)
+        self.create_text(x + m + d // 2, y + m + d // 2, text="–" if tile.excluded else str(number),
                          fill="#ffffff", font=("Segoe UI", 10, "bold"))
         x0, y0, x1, y1 = layout.cross_rect(x, y)
         self.create_oval(x0, y0, x1, y1, fill="#2e7d32" if tile.excluded else "#222222", outline="#ffffff", width=2)
