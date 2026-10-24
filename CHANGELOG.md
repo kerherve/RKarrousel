@@ -3,6 +3,18 @@
 Chaque section `## vX.Y.Z` devient le texte de la release GitHub, affiché par l'appli dans la fenêtre de mise à jour
 (voir `tools/release_notes.py`). À écrire pour l'utilisateur, en français, avant de taguer.
 
+## v0.11.2
+
+- Les nouveautés s'affichent lisiblement dans la fenêtre de mise à jour (texte simple, puces).
+- Les notes de chaque version sont désormais écrites à la main plutôt que générées.
+
+Pour passer d'une version plus ancienne, voir aussi les nouveautés de la 0.11 :
+
+- Préréglages : un clic règle cadre, fond, signature, format et taille. Quatre sont fournis, et « Enregistrer sous… » garde les vôtres.
+- Couleurs tirées de la photo : le cadre et le fond uni peuvent prendre la couleur dominante de chaque photo, en version claire ou sombre.
+- Guide d'utilisation intégré : bouton « Guide » (ou touche F1), en français et en anglais.
+- L'option « Numéroter les fichiers » est maintenant dans Réglages → « Fichiers générés ».
+
 ## v0.11.1
 
 Nouveautés de la 0.11 :
