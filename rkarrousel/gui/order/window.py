@@ -195,6 +195,11 @@ class OrderWindow(tk.Toplevel):
         self.select(index)
         return self.model.tiles[index]
 
+    def viewer_peek(self, delta: int):
+        """La vignette voisine (sans changer la sélection), pour l'aperçu en carrousel de la visionneuse."""
+        index = self.model.step_from_selection(delta)
+        return None if index is None else self.model.tiles[index]
+
     def viewer_can_step(self, delta: int) -> bool:
         return self.model.step_from_selection(delta) is not None
 

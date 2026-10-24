@@ -148,10 +148,11 @@ On a "crop" image, "Crop..." opens the editor:
 
 - Wheel: zoom; drag: move the image; "Fit" and "100%" to go back.
 - Round arrows on the edges (or the ← → keys): previous or next image of the grid, without closing the window. Excluded images are skipped; the position (3 / 12) is shown at the top.
+- Carousel preview: the previous and next images appear on either side, like when you swipe through an Instagram post, to judge the overall result (panorama slices that line up, neighbouring frames...). The "Carousel preview" box turns it off.
 - Right-click + drag: a ruler that measures in pixels, for example the frame thickness.
 - The frame thickness is also measured automatically and shown at the top.
 - "Settings" panel on the right: frame thickness and colour, background (solid or blurred), signature, colours taken from the photo. What the displayed image does not use is greyed out: a panorama slice or a crop has neither background nor signature. The image is recomputed after each change, without going back to the Settings tab; the "Settings" button hides or shows the panel.
-- "This photo's frame": a frame colour specific to the displayed photo (fixed, or taken from the photo) that replaces the general setting for that photo only. "Same as the general settings" cancels it. "Resulting colour" shows the colour actually computed for this photo; three "Fine-tune" sliders (hue, saturation, lightness) adjust it very slightly, by eye, for this photo only. "Reset" puts them back to zero. The choice is kept from one session to the next.
+- "This photo's frame": a frame colour specific to the displayed photo (fixed, or taken from the photo) that replaces the general setting for that photo only. "Same as the general settings" cancels it. "Resulting colour" shows the colour actually computed for this photo; three "Fine-tune" sliders (hue, saturation, lightness) adjust it very slightly, by eye, for this photo only. "Reset" puts them back to zero; double-clicking a row puts that one slider back in the middle. The choice is kept from one session to the next.
 - The rest of the panel reuses the Settings tab: those apply to all photos, and the grid updates when you close the viewer.
 
 

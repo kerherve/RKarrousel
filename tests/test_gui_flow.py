@@ -285,6 +285,11 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: "border_tweak" in self.app.ctx.config["photo_overrides"].get(key, {}))
         self.assertGreater(self.app.ctx.config["photo_overrides"][key]["border_tweak"][2], 0)
         self.pump(lambda: viewer.generation >= 2 and group.resolved_text.cget("text") != before)
+        group.tweaks[0].set(0.6)
+        for name in ("ButtonPress-1", "ButtonRelease-1", "ButtonPress-1", "ButtonRelease-1"):  # un double-clic
+            group.scales[0].event_generate(f"<{name}>", x=40, y=5)
+        self.root.update()
+        self.assertEqual(group.tweaks[0].get(), 0.0)
         group.reset_tweak()
         group.mode.set("global")
         self.pump(lambda: key not in self.app.ctx.config["photo_overrides"])
@@ -324,6 +329,15 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: viewer.image is not None)
         self.assertEqual(viewer.position_label.cget("text"), "1 / 5")
         self.assertFalse(window.viewer_can_step(-1))  # première image : pas de flèche précédente
+        # carrousel : la suivante est affichée à droite, pas de précédente avant la première
+        self.pump(lambda: viewer.neighbors[1] is not None)
+        self.assertIsNone(viewer.neighbors[-1])
+        self.root.update()
+        self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 1)
+        viewer.carousel.set(False)
+        viewer.redraw()
+        self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 0)
+        viewer.carousel.set(True)
         first_source = viewer.source
         viewer.step(1)
         self.assertEqual(window.model.selected, 1)

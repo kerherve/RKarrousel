@@ -205,6 +205,7 @@ STRINGS = {
     "tweak_sat": "Saturation",
     "tweak_light": "Clarté",
     "tweak_reset": "Réinitialiser",
+    "viewer_carousel": "Aperçu carrousel",
     "viewer_not_applicable": "non applicable à cette image",
     "viewer_settings": "Réglages",
     "viewer_settings_hint": "Ce sont les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos. L'image se recalcule après chaque changement.",

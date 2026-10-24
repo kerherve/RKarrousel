@@ -42,10 +42,13 @@ class PhotoFrameGroup(ttk.LabelFrame):
         ttk.Label(self, text=t("tweak_title"), style="Hint.TLabel").grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(10, 0))
         self.scales = []
         for row, (label, var) in enumerate(zip(("tweak_hue", "tweak_sat", "tweak_light"), self.tweaks), start=4):
-            ttk.Label(self, text=t(label)).grid(row=row, column=0, sticky=tk.W)
+            name = ttk.Label(self, text=t(label))
+            name.grid(row=row, column=0, sticky=tk.W)
             scale = ttk.Scale(self, from_=-1.0, to=1.0, variable=var, orient=tk.HORIZONTAL)
             scale.grid(row=row, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0))
             self.scales.append(scale)
+            for widget in (name, scale):  # double-clic sur la ligne : retour à la valeur par défaut (au milieu)
+                widget.bind("<Double-Button-1>", lambda e, v=var: self._reset_one(v))
             bind_trace(self, var, self._tweak_changed)
         self.reset_button = ttk.Button(self, text=t("tweak_reset"), command=self.reset_tweak)
         self.reset_button.grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
@@ -96,6 +99,10 @@ class PhotoFrameGroup(ttk.LabelFrame):
     # ------------------------------------------------------------------ modifications
     def tweak_values(self) -> list:
         return [round(var.get() * limit, 3) for var, limit in zip(self.tweaks, TWEAK_LIMITS)]
+
+    def _reset_one(self, var: tk.DoubleVar) -> str:
+        var.set(0.0)
+        return "break"  # le curseur ne doit pas aller se placer sous la souris après la remise à zéro
 
     def reset_tweak(self) -> None:
         for var in self.tweaks:

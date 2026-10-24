@@ -205,6 +205,7 @@ STRINGS = {
     "tweak_sat": "Saturation",
     "tweak_light": "Lightness",
     "tweak_reset": "Reset",
+    "viewer_carousel": "Carousel preview",
     "viewer_not_applicable": "not applicable to this image",
     "viewer_settings": "Settings",
     "viewer_settings_hint": "These are the settings of the Settings tab: they apply to all photos. The image is recomputed after each change.",

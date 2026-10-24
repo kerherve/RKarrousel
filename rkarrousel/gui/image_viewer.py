@@ -25,6 +25,9 @@ from rkarrousel.pipeline import peek_size
 MIN_SCALE = 0.02
 MAX_SCALE = 32.0
 ZOOM_STEP = 1.25
+NEIGHBOR_SIDE = 1400  # les voisines du carrousel sont rendues à partir d'une source réduite : c'est un simple aperçu
+CAROUSEL_GAP = 0.02   # écart entre deux images du carrousel, en fraction de la largeur
+MAX_NEIGHBOR_DISPLAY = 2600  # au-delà (zoom fort), on ne dessine plus les voisines
 RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
 
 
@@ -64,6 +67,8 @@ class ImageViewer(tk.Toplevel):
         self.generation = 0  # numéro du dernier rendu demandé : les résultats plus anciens sont ignorés
         self.loaded_once = False
         self.settings_changed = False
+        self.neighbors = {-1: None, 1: None}  # images voisines (PIL), pour l'aperçu en carrousel
+        self._neighbor_photos = {}
         self._rerender_job = None
 
         self._build_ui()
@@ -72,7 +77,7 @@ class ImageViewer(tk.Toplevel):
             self.bind("<Left>", lambda e: self._key_step(-1))
             self.bind("<Right>", lambda e: self._key_step(1))
         self.protocol("WM_DELETE_WINDOW", self.close)
-        threading.Thread(target=self._load, args=(self.generation, dict(config)), daemon=True).start()
+        self._launch(self.generation, dict(config))
         self.after(80, self._poll)
         self._update_position()
 
@@ -104,6 +109,10 @@ class ImageViewer(tk.Toplevel):
         self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
         self.position_label = ttk.Label(bar, text="")
         self.position_label.pack(side=tk.LEFT, padx=(16, 0))
+        self.carousel = tk.BooleanVar(value=True)
+        if self.navigator is not None:
+            ttk.Checkbutton(bar, text=t("viewer_carousel"), variable=self.carousel, command=self.redraw).pack(
+                side=tk.LEFT, padx=(16, 0))
         ttk.Button(bar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
         if self.side is not None:
             self.settings_button = ttk.Button(bar, text=t("viewer_settings"), command=self.toggle_settings)
@@ -191,9 +200,32 @@ class ImageViewer(tk.Toplevel):
         self.settings_changed = True
         self.generation += 1
         self.info.set(t("viewer_loading"))
-        threading.Thread(target=self._load, args=(self.generation, config), daemon=True).start()
+        self._launch(self.generation, config)
 
     # ------------------------------------------------------------------ chargement
+    def _launch(self, generation: int, config: dict) -> None:
+        """Calcule l'image affichée (pleine résolution) et, en réduit, ses voisines de la grille (carrousel)."""
+        threading.Thread(target=self._load, args=(generation, config), daemon=True).start()
+        peeks = {}
+        if self.navigator is not None:
+            for delta in (-1, 1):
+                tile = self.navigator.viewer_peek(delta)
+                if tile is not None:
+                    peeks[delta] = (tile.source, tile.kind)
+        for delta in (-1, 1):
+            if delta not in peeks:
+                self.neighbors[delta] = None
+        if peeks:
+            threading.Thread(target=self._load_neighbors, args=(generation, config, peeks), daemon=True).start()
+
+    def _load_neighbors(self, generation: int, config: dict, peeks: dict) -> None:
+        for delta, (source, kind) in peeks.items():
+            try:
+                image = render_output(source, config, kind, max_side=NEIGHBOR_SIDE)
+            except Exception:
+                image = None
+            self.events.put(("neighbor", (delta, image), generation))
+
     def _load(self, generation: int, config: dict) -> None:
         try:
             image = render_output(self.source, config, self.kind)
@@ -209,6 +241,13 @@ class ImageViewer(tk.Toplevel):
                 event = self.events.get_nowait()
                 if event[2] != self.generation:
                     continue  # résultat d'un rendu déjà remplacé par un réglage plus récent
+                if event[0] == "neighbor":
+                    delta, image = event[1]
+                    self.neighbors[delta] = image.convert("RGB") if image is not None else None
+                    self._neighbor_photos.pop(delta, None)
+                    if self.image is not None:
+                        self.redraw()
+                    continue
                 if event[0] == "image" and event[1] is not None:
                     self.image = event[1].convert("RGB")
                     self._describe()
@@ -306,6 +345,35 @@ class ImageViewer(tk.Toplevel):
         self.fit_mode = False
         self.redraw()
 
+    # ------------------------------------------------------------------ carrousel
+    def _draw_neighbors(self) -> None:
+        """Les images précédente et suivante de la grille, de part et d'autre de l'image affichée, comme quand on fait
+        défiler un post Instagram : on juge le rendu d'ensemble (tranches d'un panorama qui se raccordent…)."""
+        if self.navigator is None or not self.carousel.get() or self.image is None:
+            return
+        iw, ih = self.image.size
+        if iw * self.zoom > MAX_NEIGHBOR_DISPLAY:
+            return
+        vw, vh = self._viewport()
+        gap = iw * CAROUSEL_GAP
+        for delta in (-1, 1):
+            image = self.neighbors.get(delta)
+            if image is None:
+                continue
+            dw = max(1, int(round(iw * self.zoom)))
+            dh = max(1, int(round(dw * image.height / image.width)))
+            x = ((-(gap + iw) if delta < 0 else iw + gap) - self.ox) * self.zoom
+            y = -self.oy * self.zoom
+            if x + dw < 0 or x > vw or y + dh < 0 or y > vh:
+                continue  # hors de la zone visible
+            cached = self._neighbor_photos.get(delta)
+            if cached is None or cached[0] != (dw, dh):
+                resized = image.resize((dw, dh), Image.Resampling.BILINEAR)
+                cached = ((dw, dh), ImageTk.PhotoImage(resized))
+                self._neighbor_photos[delta] = cached
+            self.canvas.create_image(x, y, anchor=tk.NW, image=cached[1], tags="neigh")
+        self.canvas.tag_lower("neigh")
+
     # ------------------------------------------------------------------ navigation entre les images
     def _draw_nav(self) -> None:
         """Flèches rondes sur les bords gauche et droit de l'image : précédente / suivante (absentes aux extrémités)."""
@@ -363,7 +431,9 @@ class ImageViewer(tk.Toplevel):
         self.loaded_once = False
         self.ruler = self.pan = None
         self.fit_mode = True
-        self.canvas.delete("img", "ruler")
+        self.neighbors = {-1: None, 1: None}
+        self._neighbor_photos = {}
+        self.canvas.delete("img", "neigh", "ruler")
         self.measure.set(t("viewer_hint"))
         self.info.set(t("viewer_loading"))
         self.config_snapshot = dict(self.ctx.collect_config()) if self.ctx is not None else self.config_snapshot
@@ -371,7 +441,7 @@ class ImageViewer(tk.Toplevel):
             self.photo_group.set_source(source)
             self._apply_features()
         self.generation += 1
-        threading.Thread(target=self._load, args=(self.generation, dict(self.config_snapshot)), daemon=True).start()
+        self._launch(self.generation, dict(self.config_snapshot))
         self._update_position()
         self._draw_nav()
 
@@ -399,7 +469,7 @@ class ImageViewer(tk.Toplevel):
     # ------------------------------------------------------------------ rendu
     def redraw(self) -> None:
         canvas = self.canvas
-        canvas.delete("img")
+        canvas.delete("img", "neigh")
         self.zoom_label.configure(text=t("viewer_zoom", percent=self.zoom * 100))
         if self.image is None:
             return
@@ -419,6 +489,7 @@ class ImageViewer(tk.Toplevel):
         canvas.create_image((box[0] - self.ox) * self.zoom, (box[1] - self.oy) * self.zoom, anchor=tk.NW,
                             image=self.photo, tags="img")
         canvas.tag_lower("img")
+        self._draw_neighbors()
         if self.ruler:
             self._draw_ruler()
         canvas.tag_raise("nav")
