@@ -31,12 +31,14 @@ class OrderWindow(tk.Toplevel):
         dark: bool = False,
         excluded: Optional[Set[str]] = None,
         on_crop: Optional[Callable[[Path, float], None]] = None,
+        settings_ctx=None,
     ):
         super().__init__(parent)
         scale = max(1.0, self.winfo_fpixels("1i") / 96)
         self.scale, self.dark = scale, dark
         self.config_snapshot = dict(config)
         self.on_change, self.get_config, self.on_crop = on_change, get_config, on_crop
+        self.settings_ctx = settings_ctx  # contexte de l'appli : la visionneuse y règle cadre et fond
         self.layout = GridLayout(scale, output_format_of(config))
         self.model = OrderModel(files, excluded)
         self.thumbs = ThumbnailService(cache, (self.layout.tile_w * 2, self.layout.tile_h * 2))  # marge pour un affichage net
@@ -177,7 +179,10 @@ class OrderWindow(tk.Toplevel):
     def view_selected(self) -> None:
         tile = self.model.selected_tile()
         if tile is not None:
-            ImageViewer(self, tile.source, tile.kind, self.config_snapshot, dark=self.dark)
+            ImageViewer(
+                self, tile.source, tile.kind, self.config_snapshot, dark=self.dark,
+                ctx=self.settings_ctx, on_settings_changed=self.refresh,
+            )
 
     def crop_selected(self) -> None:
         tile = self.model.selected_tile()

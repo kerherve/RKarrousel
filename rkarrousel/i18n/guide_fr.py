@@ -113,6 +113,8 @@ GUIDE = [
             "Molette : zoom ; glisser : déplacer l'image ; « Ajuster » et « 100 % » pour revenir.",
             "Clic droit + glisser : règle qui mesure en pixels, par exemple l'épaisseur du cadre.",
             "L'épaisseur du cadre est aussi mesurée automatiquement et affichée en haut.",
+            "Panneau « Réglages » à droite : épaisseur et couleur du cadre, fond (uni ou flou), couleurs tirées de la photo. L'image se recalcule après chaque changement, sans retourner dans l'onglet Réglages ; le bouton « Réglages » masque ou affiche le panneau.",
+            "Ce sont les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos, et la grille se met à jour à la fermeture.",
         ]),
     ]),
     ("numbering", "Numérotation des fichiers", [

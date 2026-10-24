@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Visionneuse d'une image de sortie, en pleine résolution : zoom, déplacement et règle pour mesurer
-(par exemple l'épaisseur du cadre blanc)."""
+(par exemple l'épaisseur du cadre blanc). Un panneau latéral règle le cadre et le fond sans quitter la fenêtre :
+l'image se recalcule au fil des changements (les réglages sont ceux de l'onglet Réglages)."""
 import math
 import queue
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
-from typing import Optional
+from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
+from rkarrousel.gui.settings_groups import FillGroup, FrameGroup
+from rkarrousel.gui.widgets import bind_trace
 from rkarrousel.i18n import kind_label, t
 from rkarrousel.imaging.colors import resolve_photo_colors_for_path
 from rkarrousel.config import background_color_of, border_color_of
@@ -20,10 +23,22 @@ from rkarrousel.outputs import render_output
 MIN_SCALE = 0.02
 MAX_SCALE = 32.0
 ZOOM_STEP = 1.25
+RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
 
 
 class ImageViewer(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, source: Path, kind: str, config: dict, dark: bool = False):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        source: Path,
+        kind: str,
+        config: dict,
+        dark: bool = False,
+        ctx=None,
+        on_settings_changed: Optional[Callable[[], None]] = None,
+    ):
+        """`ctx` (AppContext) active le panneau de réglages ; `on_settings_changed` est appelé à la fermeture si
+        des réglages ont été modifiés (pour rafraîchir la grille d'ordre)."""
         super().__init__(parent)
         self.title(f"{source.name} — {kind_label(kind)}")
         self.source, self.kind, self.config_snapshot = source, kind, dict(config)
@@ -40,23 +55,35 @@ class ImageViewer(tk.Toplevel):
         self.ruler: Optional[tuple] = None
         self.events: "queue.Queue[tuple]" = queue.Queue()
         self._closing = False
+        self.ctx, self.on_settings_changed = ctx, on_settings_changed
+        self.generation = 0  # numéro du dernier rendu demandé : les résultats plus anciens sont ignorés
+        self.loaded_once = False
+        self.settings_changed = False
+        self._rerender_job = None
 
         self._build_ui()
         self.bind("<Escape>", lambda e: self.close())
         self.protocol("WM_DELETE_WINDOW", self.close)
-        threading.Thread(target=self._load, daemon=True).start()
+        threading.Thread(target=self._load, args=(self.generation, dict(config)), daemon=True).start()
         self.after(80, self._poll)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         s = self.scale_ui
         screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
-        width, height = min(int(980 * s), screen_w - 60), min(int(860 * s), screen_h - 120)
+        wide = int(380 * s) if self.ctx is not None else 0  # place du panneau de réglages
+        width, height = min(int(980 * s) + wide, screen_w - 60), min(int(860 * s), screen_h - 120)
         self.geometry(f"{width}x{height}+{max(0, (screen_w - width) // 2)}+{max(0, (screen_h - height) // 2 - 30)}")
         self.minsize(int(480 * s), int(360 * s))
 
-        frame = ttk.Frame(self, padding=(12, 10, 12, 10))
-        frame.pack(fill=tk.BOTH, expand=True)
+        body = ttk.Frame(self, padding=(12, 10, 12, 10))
+        body.pack(fill=tk.BOTH, expand=True)
+        self.side = None
+        if self.ctx is not None:
+            self.side = self._build_settings_panel(body)
+            self.side.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
+        frame = self.main = ttk.Frame(body)
+        frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         bar = ttk.Frame(frame)
         bar.pack(fill=tk.X, pady=(0, 8))
@@ -67,6 +94,9 @@ class ImageViewer(tk.Toplevel):
         self.zoom_label = ttk.Label(bar, text="")
         self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
         ttk.Button(bar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
+        if self.side is not None:
+            self.settings_button = ttk.Button(bar, text=t("viewer_settings"), command=self.toggle_settings)
+            self.settings_button.pack(side=tk.RIGHT, padx=(0, 8))
 
         self.info = tk.StringVar(value=t("viewer_loading"))
         ttk.Label(frame, textvariable=self.info).pack(fill=tk.X)
@@ -85,13 +115,55 @@ class ImageViewer(tk.Toplevel):
         self.canvas.bind("<Button-4>", lambda e: self._zoom_at(e.x, e.y, ZOOM_STEP))
         self.canvas.bind("<Button-5>", lambda e: self._zoom_at(e.x, e.y, 1 / ZOOM_STEP))
 
-    # ------------------------------------------------------------------ chargement
-    def _load(self) -> None:
+    def _build_settings_panel(self, parent: tk.Misc) -> ttk.Frame:
+        """Cadre et fond : les mêmes groupes que l'onglet Réglages, branchés sur les mêmes variables."""
+        model = self.ctx.model
+        side = ttk.Frame(parent, width=int(360 * self.scale_ui))
+        FrameGroup(side, self.ctx).pack(fill=tk.X)
+        FillGroup(side, self.ctx).pack(fill=tk.X, pady=(10, 0))
+        ttk.Label(side, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(340 * self.scale_ui),
+                  justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
+        for variable in (
+            model.frame_percent, model.no_frame, model.border_color, model.border_color_mode,
+            model.landscape_fill_mode, model.background_color, model.background_color_mode, model.blur_strength,
+        ):
+            bind_trace(side, variable, self._schedule_rerender)
+        return side
+
+    def toggle_settings(self) -> None:
+        if self.side.winfo_ismapped():
+            self.side.pack_forget()
+        else:
+            self.side.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0), before=self.main)
+
+    def _schedule_rerender(self) -> None:
+        if self._closing:
+            return
+        if self._rerender_job is not None:
+            self.after_cancel(self._rerender_job)
+        self._rerender_job = self.after(RERENDER_DELAY_MS, self._rerender)
+
+    def _rerender(self) -> None:
+        self._rerender_job = None
+        if self._closing:
+            return
         try:
-            image = render_output(self.source, self.config_snapshot, self.kind)
-            self.events.put(("image", image))
+            config = dict(self.ctx.collect_config())
+        except Exception:  # saisie en cours (champ vide…) : on attend la prochaine modification
+            return
+        self.config_snapshot = config
+        self.settings_changed = True
+        self.generation += 1
+        self.info.set(t("viewer_loading"))
+        threading.Thread(target=self._load, args=(self.generation, config), daemon=True).start()
+
+    # ------------------------------------------------------------------ chargement
+    def _load(self, generation: int, config: dict) -> None:
+        try:
+            image = render_output(self.source, config, self.kind)
+            self.events.put(("image", image, generation))
         except Exception as exc:
-            self.events.put(("error", str(exc) or exc.__class__.__name__))
+            self.events.put(("error", str(exc) or exc.__class__.__name__, generation))
 
     def _poll(self) -> None:
         if self._closing:
@@ -99,10 +171,16 @@ class ImageViewer(tk.Toplevel):
         try:
             while True:
                 event = self.events.get_nowait()
+                if event[2] != self.generation:
+                    continue  # résultat d'un rendu déjà remplacé par un réglage plus récent
                 if event[0] == "image" and event[1] is not None:
                     self.image = event[1].convert("RGB")
                     self._describe()
-                    self.fit()
+                    if self.loaded_once:
+                        self.redraw()  # on garde le zoom et la position pendant qu'on règle
+                    else:
+                        self.loaded_once = True
+                        self.fit()
                 elif event[0] == "error":
                     self.info.set(t("order_error", message=event[1]))
                 else:
@@ -236,4 +314,7 @@ class ImageViewer(tk.Toplevel):
 
     def close(self) -> None:
         self._closing = True
+        changed = self.settings_changed and self.on_settings_changed is not None
         self.destroy()
+        if changed:
+            self.on_settings_changed()

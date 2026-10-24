@@ -108,6 +108,8 @@ GUIDE = [
             "Wheel: zoom; drag: move the image; \"Fit\" and \"100%\" to go back.",
             "Right-click + drag: a ruler that measures in pixels, for example the frame thickness.",
             "The frame thickness is also measured automatically and shown at the top.",
+            "\"Settings\" panel on the right: frame thickness and colour, background (solid or blurred), colours taken from the photo. The image is recomputed after each change, without going back to the Settings tab; the \"Settings\" button hides or shows the panel.",
+            "These are the settings of the Settings tab: they apply to all photos, and the grid updates when you close the viewer.",
         ]),
     ]),
     ("numbering", "File numbering", [

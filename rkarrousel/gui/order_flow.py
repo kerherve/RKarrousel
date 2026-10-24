@@ -36,6 +36,7 @@ class OrderController:
             on_crop=self.set_crop_offset,
             on_change=self.set_order,
             get_config=lambda: dict(ctx.collect_config()),
+            settings_ctx=ctx,
         )
 
     def close(self) -> None:

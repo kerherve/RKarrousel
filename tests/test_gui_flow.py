@@ -206,6 +206,23 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(len(names), 3)
         self.assertEqual([n[:2] for n in names], ["01", "02", "03"])
 
+    def test_viewer_adjusts_frame_and_fill_live_and_refreshes_the_grid(self):
+        from rkarrousel.gui import image_viewer
+
+        window = self.open_order_window(self.photos[:1])
+        window.select(0)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        refreshed = []
+        viewer.on_settings_changed = lambda: refreshed.append(True)
+
+        self.assertIn("cadre mesuré", viewer.info.get())
+        self.app.model.no_frame.set(True)  # l'image doit être recalculée, sans cadre
+        self.pump(lambda: viewer.generation == 1 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
+        viewer.close()
+        self.assertEqual(refreshed, [True])  # la grille est rafraîchie à la fermeture
+
     def test_crop_button_is_only_enabled_on_a_crop_tile(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
         crop_index = window.model.index_of([t.key for t in window.tiles if t.kind == "crop34"][0])
