@@ -16,6 +16,7 @@ SWIPE_VELOCITY = 700    # ou vitesse (pixels par seconde) d'un coup de pouce rap
 RESISTANCE = 0.25       # en bout de carrousel, l'image ne suit le doigt que d'un quart
 CAROUSEL_GAP = 0.02     # écart entre deux images, en fraction de la largeur
 MAX_NEIGHBOR_DISPLAY = 2600  # au-delà (zoom fort), on ne dessine plus les voisines
+PHOTO_CACHE = 6             # voisines déjà redimensionnées, gardées en mémoire
 
 
 def swipe_decision(slide_px: float, distance: float, velocity: float, can_prev: bool, can_next: bool) -> int:
@@ -45,7 +46,7 @@ class Carousel:
         self.neighbors = {-1: None, 1: None}  # images voisines (PIL)
         self.slide_px = 0.0                   # décalage horizontal actuel
         self.animating = False
-        self._photos = {}                     # voisine → (taille, image Tk) : évite de redimensionner à chaque dessin
+        self._photos = {}                     # (image, taille) → image Tk : on ne redimensionne qu'une fois une voisine
         self._swipe: Optional[dict] = None
         self._closing = False
 
@@ -54,7 +55,6 @@ class Carousel:
         """Nouvelle image affichée : plus de décalage, voisines à recharger. `behind` : (côté, image) de celle qu'on
         quitte, qui reste visible de l'autre côté en attendant le rendu des voisines."""
         self.neighbors = {-1: None, 1: None}
-        self._photos = {}
         self.slide_px = 0.0
         self._swipe = None
         if behind is not None and behind[1] is not None:
@@ -62,7 +62,6 @@ class Carousel:
 
     def set_neighbor(self, delta: int, image: Optional[Image.Image]) -> None:
         self.neighbors[delta] = image
-        self._photos.pop(delta, None)
 
     def can_step(self, delta: int) -> bool:
         return self.navigator is not None and self.navigator.viewer_can_step(delta)
@@ -90,12 +89,26 @@ class Carousel:
             y = -view.oy * view.zoom
             if x + dw < 0 or x > vw or y + dh < 0 or y > vh:
                 continue  # hors de la zone visible
-            cached = self._photos.get(delta)
-            if cached is None or cached[0] != (dw, dh):
-                cached = ((dw, dh), ImageTk.PhotoImage(neighbor.resize((dw, dh), Image.Resampling.BILINEAR)))
-                self._photos[delta] = cached
-            self.canvas.create_image(x, y, anchor=tk.NW, image=cached[1], tags="neigh")
+            self.canvas.create_image(x, y, anchor=tk.NW, image=self._photo(neighbor, dw, dh), tags="neigh")
         self.canvas.tag_lower("neigh")
+
+    def redraw(self, image: Optional[Image.Image], view: Viewport, view_size) -> None:
+        """Redessine seulement les voisines (une voisine vient d'arriver) : l'image affichée n'est pas touchée."""
+        self.canvas.delete("neigh")
+        self.draw(image, view, view_size)
+        self.canvas.tag_raise("nav")
+
+    def _photo(self, neighbor: Image.Image, width: int, height: int) -> ImageTk.PhotoImage:
+        """La voisine à la taille d'affichage, gardée en mémoire : après un défilement, l'image qu'on vient de quitter et
+        celles déjà vues ne sont pas redimensionnées de nouveau (ce qui ferait saccader l'écran)."""
+        key = (id(neighbor), width, height)
+        cached = self._photos.get(key)
+        if cached is None:
+            photo = ImageTk.PhotoImage(neighbor.resize((width, height), Image.Resampling.BILINEAR))
+            cached = self._photos[key] = (neighbor, photo)  # la référence à l'image garde son identifiant valable
+            while len(self._photos) > PHOTO_CACHE:
+                self._photos.pop(next(iter(self._photos)))
+        return cached[1]
 
     def draw_arrows(self, view_size) -> None:
         """Flèches rondes sur les bords gauche et droit : précédente / suivante (absentes aux extrémités)."""

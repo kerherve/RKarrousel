@@ -499,6 +499,40 @@ class GuiFlowTests(unittest.TestCase):
         viewer.step(-1)  # retour : l'aperçu net vient du cache, aucun nouveau calcul n'est nécessaire
         self.pump(lambda: window.model.selected == 1 and viewer.image is seen)
 
+    def test_swiping_through_images_never_leaves_a_side_empty_even_for_a_moment(self):
+        photos = [make_image(self.dir, f"s{i}.jpg", (1500, 1000)) for i in range(3)]  # 3 paysages : 12 images
+        window = self.open_order_window(photos)
+        viewer = self.show_viewer_on(window, 2)
+        recorded = []
+        original_show = viewer.show
+
+        def recording_show(*args, **kwargs):
+            original_show(*args, **kwargs)  # dès la fin de la mise en place : y a-t-il une voisine de chaque côté ?
+            expected = sum(1 for delta in (-1, 1) if window.viewer_can_step(delta))
+            recorded.append((len(viewer.canvas.find_withtag("neigh")), expected, window.model.selected))
+
+        viewer.show = recording_show
+        for _ in range(6):
+            tile = window.model.selected
+            # le temps de regarder la photo : les voisines (et les deux suivantes) sont calculées d'avance
+            self.pump(lambda: all(
+                viewer.loader.cache.get(window.model.tiles[i].source, window.model.tiles[i].kind, viewer.config_snapshot)
+                is not None for i in (tile - 1, tile, tile + 1, tile + 2) if 0 <= i < len(window.model.tiles)))
+            viewer.step(1)
+            self.pump(lambda: window.model.selected == tile + 1 and not viewer.carousel.animating)
+        self.assertEqual(len(recorded), 6)
+        for shown, expected, selected in recorded:
+            self.assertEqual(shown, expected, f"image {selected} : voisines affichées {shown}/{expected} juste après le défilement")
+
+    def test_a_neighbour_arriving_redraws_only_the_neighbours(self):
+        window = self.open_order_window(self.photos[:2])
+        viewer = self.show_viewer_on(window, 1)
+        self.pump(lambda: viewer.image is not None and viewer.carousel.neighbors[1] is not None)
+        with mock.patch.object(viewer, "redraw") as redraw:
+            viewer._neighbor_arrived()
+        redraw.assert_not_called()  # l'image affichée n'est pas recréée à l'arrivée d'une voisine
+        self.assertGreaterEqual(len(viewer.canvas.find_withtag("neigh")), 1)
+
     def test_viewer_rerenders_when_the_colour_source_changes(self):
 
         self.app.model.border_color_mode.set("dominant")

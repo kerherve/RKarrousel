@@ -14,7 +14,8 @@ from rkarrousel.gui.viewer.render_jobs import RenderJobs
 from rkarrousel.outputs import item_key
 
 POLL_MS = 80
-CACHE_SIZE = 8  # aperçus gardés en mémoire (≈ 13 Mo chacun) : revenir en arrière est instantané
+CACHE_SIZE = 10  # aperçus gardés en mémoire (≈ 13 Mo chacun) : revenir en arrière est instantané
+PREFETCH = (-1, 1, -2, 2)  # voisines préparées d'avance : les deux premières s'affichent, les autres attendent dans le cache
 
 
 class PreviewCache:
@@ -84,7 +85,8 @@ class ImageLoader:
 
     def launch(self, source: Path, kind: str, config: dict, main: bool, keep_neighbors: bool, full: bool = False) -> None:
         """Image affichée (si `main`) : depuis le cache, sinon rendue en aperçu, ou en pleine résolution si `full`.
-        Voisines du carrousel : depuis le cache, sinon le petit aperçu de la grille en attendant le rendu net.
+        Voisines du carrousel (±1) : depuis le cache, sinon le petit aperçu de la grille en attendant le rendu net. Les
+        deux suivantes (±2) sont préparées d'avance pour le cache : après un défilement, la nouvelle voisine est déjà là.
         `keep_neighbors` garde celles déjà là."""
         self._config = dict(config)
         signature = render_signature(config)
@@ -95,19 +97,25 @@ class ImageLoader:
         peeks = {}
         self._expected = {}
         if self.navigator is not None:
-            for delta in (-1, 1):
+            for delta in PREFETCH:
                 tile = self.navigator.viewer_peek(delta)
+                shown = abs(delta) == 1  # ±1 : à l'écran ; ±2 : seulement dans le cache
                 if tile is None:
-                    self.carousel.set_neighbor(delta, None)
+                    if shown:
+                        self.carousel.set_neighbor(delta, None)
                     continue
-                self._expected[delta] = (tile.source, tile.kind)
+                if shown:
+                    self._expected[delta] = (tile.source, tile.kind)
                 cached = self.cache.get(tile.source, tile.kind, config)
                 if cached is not None:
-                    self.carousel.set_neighbor(delta, cached)
+                    if shown:
+                        self.carousel.set_neighbor(delta, cached)
                     continue
-                stand_in = None if keep_neighbors and self.carousel.neighbors.get(delta) is not None else self.grid_preview(tile, config)
-                if stand_in is not None:
-                    self.carousel.set_neighbor(delta, stand_in)  # flou, mais tout de suite
+                if shown:
+                    keep = keep_neighbors and self.carousel.neighbors.get(delta) is not None
+                    stand_in = None if keep else self.grid_preview(tile, config)
+                    if stand_in is not None:
+                        self.carousel.set_neighbor(delta, stand_in)  # flou, mais tout de suite
                 key = PreviewCache.key(tile.source, tile.kind, config)
                 if key not in self._inflight:  # l'aperçu net arrive ensuite (sauf s'il est déjà en route)
                     self._inflight.add(key)
@@ -145,7 +153,7 @@ class ImageLoader:
                 if image is not None:
                     image = image.convert("RGB")
                     self.cache.put(source, neighbor_kind, self._config, image)  # utile même si l'on a déjà changé d'image
-                if self._expected.get(delta) == (source, neighbor_kind):
+                if abs(delta) == 1 and self._expected.get(delta) == (source, neighbor_kind):
                     self.carousel.set_neighbor(delta, image)
                     self.on_neighbor()
             elif kind == "image" and payload is not None:

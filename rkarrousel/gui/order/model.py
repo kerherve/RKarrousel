@@ -91,15 +91,20 @@ class OrderModel:
         self.selected = index
 
     def step_from_selection(self, delta: int) -> Optional[int]:
-        """Index de l'image affichée (non exclue) la plus proche de la sélection dans le sens `delta` (±1), ou None."""
+        """Index de la `delta`-ième image affichée (non exclue) à partir de la sélection : ±1 la voisine, ±2 celle d'après…
+        (le signe donne le sens), ou None s'il n'y en a pas."""
         index = self.selected
-        if index is None:
+        if index is None or delta == 0:
             return None
-        index += delta
+        direction = 1 if delta > 0 else -1
+        remaining = abs(delta)
+        index += direction
         while 0 <= index < len(self.tiles):
             if not self.tiles[index].excluded:
-                return index
-            index += delta
+                remaining -= 1
+                if remaining == 0:
+                    return index
+            index += direction
         return None
 
     def position_of_selection(self) -> Tuple[int, int]:

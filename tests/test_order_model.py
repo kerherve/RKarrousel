@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from rkarrousel.gui.order.grid_layout import MIN_COLUMNS as COLUMNS, GridLayout
-from rkarrousel.gui.order.model import OrderModel, cache_key, render_signature
+from rkarrousel.gui.order.model import OrderModel, Tile, cache_key, render_signature
 from rkarrousel.outputs import item_key
 from tests.helpers import make_image
 
@@ -81,6 +81,22 @@ class OrderModelTests(unittest.TestCase):
     def test_render_signature_ignores_unrelated_settings(self):
         self.assertEqual(render_signature({"frame_ratio": 0.02}), render_signature({"frame_ratio": 0.02, "language": "en"}))
         self.assertNotEqual(render_signature({"frame_ratio": 0.02}), render_signature({"frame_ratio": 0.03}))
+
+
+class NthNeighbourTests(unittest.TestCase):
+    def test_second_neighbours_skip_excluded_images(self):
+        model = OrderModel([Path("a.jpg")])
+        model.tiles = [Tile(f"k{i}", Path(f"{i}.jpg"), "framed") for i in range(6)]
+        model.tiles[2].excluded = True
+        model.select(0)
+        self.assertEqual(model.step_from_selection(1), 1)
+        self.assertEqual(model.step_from_selection(2), 3)   # l'image 2 est exclue : on la saute
+        self.assertEqual(model.step_from_selection(4), 5)
+        self.assertIsNone(model.step_from_selection(5))      # pas aussi loin
+        self.assertIsNone(model.step_from_selection(-1))
+        model.select(5)
+        self.assertEqual(model.step_from_selection(-2), 3)
+        self.assertIsNone(model.step_from_selection(0))
 
 
 class GridLayoutTests(unittest.TestCase):

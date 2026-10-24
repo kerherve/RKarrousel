@@ -150,14 +150,16 @@ class ViewerView(ttk.Frame):
         self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors, full)
 
     def _neighbor_arrived(self) -> None:
+        """Une voisine vient d'arriver : on ne redessine qu'elle, pas toute l'image (ce qui ferait clignoter)."""
         if self.image is not None:
-            self.redraw()
+            self.carousel.redraw(self.image, self.view, self._view_size())
 
     def _show_error(self, message: str) -> None:
         self.info.set(t("order_error", message=message))
 
     def _show_rendered(self, image: Image.Image, full: bool = False) -> None:
         """L'image affichée est prête : un aperçu net, ou (à la demande) la pleine résolution."""
+        unchanged = image is self.image  # le même aperçu est déjà à l'écran (il venait du cache) : rien à redessiner
         self.image = image
         previous = self.resolution.update(image, full, self.source, self.config_snapshot)
         if full:
@@ -165,11 +167,12 @@ class ViewerView(ttk.Frame):
         self._describe()
         if self.placeholder:
             self.placeholder = False
-            self.fit()  # même taille d'affichage que l'aperçu provisoire : la netteté arrive sans saut
+            if not unchanged:
+                self.fit()  # même taille d'affichage que l'aperçu provisoire : la netteté arrive sans saut
         elif self.loaded_once:
             if full and self.view.fit_mode:
                 self.fit()
-            else:
+            elif not (unchanged and not full):
                 self.redraw()  # on garde le zoom et la position pendant qu'on règle
         else:
             self.loaded_once = True
@@ -326,8 +329,10 @@ class ViewerView(ttk.Frame):
         incoming = incoming or self.loader.preview(tile, self.config_snapshot)
         behind = None
         if old is not None:
-            behind = old.copy()
-            behind.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.BILINEAR)
+            behind = old  # un aperçu est déjà petit : on le réutilise tel quel (et déjà redimensionné pour l'écran)
+            if old.width > PREVIEW_SIDE * 1.3 or old.height > PREVIEW_SIDE * 1.3:  # pleine résolution : version réduite
+                behind = old.copy()
+                behind.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.BILINEAR)
         self.show(tile.source, tile.kind, placeholder=incoming, behind=(-delta, behind))
 
     def show(self, source: Path, kind: str, placeholder=None, behind=None) -> None:
@@ -358,6 +363,7 @@ class ViewerView(ttk.Frame):
             self.panel.set_source(source)
             self.panel.apply_features(self._features())
         self._launch(main=False, keep_neighbors=True)  # voisines tout de suite (cache, ou aperçus de la grille)
+        self._neighbor_arrived()  # et on les montre dans le même mouvement : pas d'image qui disparaît puis réapparaît
         if self.loader.cache.get(source, kind, self.config_snapshot) is not None:
             self._launch_main()  # déjà calculé : on l'affiche sans attendre
         else:
