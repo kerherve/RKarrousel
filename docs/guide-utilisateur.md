@@ -100,7 +100,7 @@ L'image sélectionnée s'affiche en pleine résolution, avec ses voisines de par
 
 Quand la photo n'a pas le format de sortie, le reste de l'image est rempli par un fond :
 
-- Fond uni : couleur fixe (noir par défaut) ou tirée de la photo.
+- Fond uni : couleur fixe (noir par défaut) ou tirée de la photo. Ce sont les bandes autour de la photo, à l'intérieur du cadre ; si le fond et le cadre ont la même couleur, un avertissement orange le signale (on ne distingue plus le cadre).
 - Fond flouté : une version agrandie et floutée de la photo ; l'intensité du flou se règle.
 
 ### Signature

@@ -75,7 +75,7 @@ GUIDE = [
         ("h", "Background"),
         ("p", "When the photo is not in the output format, the rest of the image is filled with a background:"),
         ("bullets", [
-            "Solid background: fixed colour (black by default) or taken from the photo.",
+            "Solid background: fixed colour (black by default) or taken from the photo. These are the bands around the photo, inside the frame; if the background and the frame have the same colour, an orange warning points it out (the frame can no longer be told apart).",
             "Blurred background: an enlarged, blurred version of the photo; the blur strength is adjustable.",
         ]),
         ("h", "Signature"),
