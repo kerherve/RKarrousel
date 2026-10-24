@@ -1,0 +1,385 @@
+"""Fenêtre « Voir en grand » : l'image de sortie en pleine résolution, avec zoom, déplacement et règle pour mesurer
+(par exemple l'épaisseur du cadre). Un panneau latéral règle le cadre et le fond sans quitter la fenêtre, et un carrousel
+montre les images voisines de la grille comme sur un post Instagram.
+
+Les pièces vivent à côté : `viewport` (zoom), `render_jobs` (calculs en arrière-plan), `carousel`, `ruler` et
+`settings_panel`. Cette classe les assemble."""
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk
+from typing import Callable, Optional
+
+from PIL import Image, ImageTk
+
+from rkarrousel.config import background_color_of, border_color_of, config_for_photo
+from rkarrousel.gui.viewer.carousel import CAROUSEL_GAP, Carousel
+from rkarrousel.gui.viewer.render_jobs import NEIGHBOR_SIDE, RenderJobs
+from rkarrousel.gui.viewer.ruler import Ruler
+from rkarrousel.gui.viewer.settings_panel import SettingsPanel
+from rkarrousel.gui.viewer.viewport import ZOOM_STEP, Viewport
+from rkarrousel.i18n import kind_label, t
+from rkarrousel.imaging.colors import resolve_photo_colors_for_path
+from rkarrousel.imaging.frames import measure_border
+from rkarrousel.outputs import kind_features
+from rkarrousel.pipeline import peek_size
+
+RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
+POLL_MS = 80
+
+
+class ImageViewer(tk.Toplevel):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        source: Path,
+        kind: str,
+        config: dict,
+        dark: bool = False,
+        ctx=None,
+        on_settings_changed: Optional[Callable[[], None]] = None,
+        navigator=None,
+    ):
+        """`ctx` (AppContext) active le panneau de réglages ; `on_settings_changed` est appelé à la fermeture si
+        des réglages ont été modifiés (pour rafraîchir la grille d'ordre). `navigator` (la grille d'ordre) donne les
+        images voisines : `viewer_peek(±1)`, `viewer_step(±1)`, `viewer_can_step(±1)` et `viewer_position()`."""
+        super().__init__(parent)
+        self.title(f"{source.name} — {kind_label(kind)}")
+        self.source, self.kind, self.config_snapshot = source, kind, dict(config)
+        self.scale_ui = max(1.0, self.winfo_fpixels("1i") / 96)
+        self.bg = "#111111" if dark else "#2b2b2b"
+        self.ctx, self.on_settings_changed, self.navigator = ctx, on_settings_changed, navigator
+
+        self.image: Optional[Image.Image] = None
+        self.photo: Optional[ImageTk.PhotoImage] = None
+        self.view = Viewport()
+        self.pan: Optional[tuple] = None
+        self.jobs = RenderJobs()
+        self.loaded_once = False
+        self.placeholder = False  # l'image affichée est un aperçu réduit, la pleine résolution arrive
+        self.settings_changed = False
+        self._closing = False
+        self._rerender_job = None
+
+        self.panel: Optional[SettingsPanel] = None
+        self._build_ui()
+        if self.panel is not None:
+            self.panel.apply_features(self._features())  # grise ce que cette image n'utilise pas
+        self.ruler = Ruler(self.canvas, self.measure, lambda: self.view.zoom)
+        self.carousel = Carousel(self.canvas, navigator, self.scale_ui, self._slide_distance, self._commit_step)
+        self._build_carousel_toolbar()
+        self._bind_events()
+        self._launch()
+        self.after(POLL_MS, self._poll)
+
+    # ------------------------------------------------------------------ interface
+    def _build_ui(self) -> None:
+        s = self.scale_ui
+        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        wide = int(500 * s) if self.ctx is not None else 0  # place du panneau de réglages
+        width, height = min(int(980 * s) + wide, screen_w - 60), min(int(860 * s), screen_h - 120)
+        self.geometry(f"{width}x{height}+{max(0, (screen_w - width) // 2)}+{max(0, (screen_h - height) // 2 - 30)}")
+        self.minsize(int(480 * s), int(360 * s))
+
+        body = ttk.Frame(self, padding=(12, 10, 12, 10))
+        body.pack(fill=tk.BOTH, expand=True)
+        if self.ctx is not None:
+            self.panel = SettingsPanel(body, self.ctx, self.source, s, self.bg, self._schedule_rerender)
+            self.panel.frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
+        self.main = ttk.Frame(body)
+        self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._build_toolbar(self.main)
+
+        self.info = tk.StringVar(value=t("viewer_loading"))
+        ttk.Label(self.main, textvariable=self.info).pack(fill=tk.X)
+        self.measure = tk.StringVar(value=t("viewer_hint"))
+        ttk.Label(self.main, textvariable=self.measure, style="Hint.TLabel").pack(fill=tk.X, pady=(2, 8))
+        self.canvas = tk.Canvas(self.main, bg=self.bg, highlightthickness=0, cursor="fleur")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+    def _build_toolbar(self, parent: ttk.Frame) -> None:
+        self.bar = bar = ttk.Frame(parent)
+        bar.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(bar, text=t("viewer_fit"), command=self.fit).pack(side=tk.LEFT)
+        ttk.Button(bar, text=t("viewer_100"), command=lambda: self.set_zoom(1.0)).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(bar, text="−", width=3, command=lambda: self.zoom_by(1 / ZOOM_STEP)).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(bar, text="+", width=3, command=lambda: self.zoom_by(ZOOM_STEP)).pack(side=tk.LEFT, padx=(6, 0))
+        self.zoom_label = ttk.Label(bar, text="")
+        self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
+        self.position_label = ttk.Label(bar, text="")
+        self.position_label.pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(bar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
+        if self.panel is not None:
+            ttk.Button(bar, text=t("viewer_settings"), command=lambda: self.panel.toggle(self.main)).pack(
+                side=tk.RIGHT, padx=(0, 8))
+
+    def _build_carousel_toolbar(self) -> None:
+        if self.navigator is not None:
+            ttk.Checkbutton(self.bar, text=t("viewer_carousel"), variable=self.carousel.enabled, command=self.redraw).pack(
+                side=tk.LEFT, padx=(16, 0))
+        self._update_position()
+
+    def _bind_events(self) -> None:
+        canvas = self.canvas
+        canvas.bind("<Configure>", lambda e: self._on_resize())
+        canvas.bind("<ButtonPress-1>", self._press)
+        canvas.bind("<B1-Motion>", self._drag)
+        canvas.bind("<ButtonRelease-1>", self._release)
+        canvas.bind("<ButtonPress-3>", lambda e: self.ruler.start(e.x, e.y))
+        canvas.bind("<B3-Motion>", lambda e: self.ruler.move(e.x, e.y))
+        canvas.bind("<MouseWheel>", lambda e: self._zoom_at(e.x, e.y, ZOOM_STEP if e.delta > 0 else 1 / ZOOM_STEP))
+        canvas.bind("<Button-4>", lambda e: self._zoom_at(e.x, e.y, ZOOM_STEP))
+        canvas.bind("<Button-5>", lambda e: self._zoom_at(e.x, e.y, 1 / ZOOM_STEP))
+        canvas.tag_bind("nav_prev", "<ButtonPress-1>", lambda e: self.step(-1))
+        canvas.tag_bind("nav_next", "<ButtonPress-1>", lambda e: self.step(1))
+        self.bind("<Escape>", lambda e: self.close())
+        if self.navigator is not None:
+            self.bind("<Left>", lambda e: self._key_step(-1))
+            self.bind("<Right>", lambda e: self._key_step(1))
+        self.protocol("WM_DELETE_WINDOW", self.close)
+
+    # ------------------------------------------------------------------ calcul de l'image
+    def _launch(self) -> None:
+        """Calcule l'image affichée (pleine résolution) et, en réduit, ses voisines de la grille (carrousel)."""
+        peeks = {}
+        if self.navigator is not None:
+            for delta in (-1, 1):
+                tile = self.navigator.viewer_peek(delta)
+                if tile is not None:
+                    peeks[delta] = (tile.source, tile.kind)
+        for delta in (-1, 1):
+            if delta not in peeks:
+                self.carousel.set_neighbor(delta, None)
+        self.jobs.launch(self.source, self.kind, dict(self.config_snapshot), peeks)
+
+    def _poll(self) -> None:
+        if self._closing:
+            return
+        for kind, payload in self.jobs.drain():
+            if kind == "neighbor":
+                delta, image = payload
+                self.carousel.set_neighbor(delta, image.convert("RGB") if image is not None else None)
+                if self.image is not None:
+                    self.redraw()
+            elif kind == "image" and payload is not None:
+                self._show_rendered(payload.convert("RGB"))
+            elif kind == "error":
+                self.info.set(t("order_error", message=payload))
+            else:
+                self.info.set(t("order_error", message="?"))
+        self.after(POLL_MS, self._poll)
+
+    def _show_rendered(self, image: Image.Image) -> None:
+        self.image = image
+        self._describe()
+        if self.placeholder:
+            self.placeholder = False
+            self.fit()  # même taille d'affichage que l'aperçu réduit : la netteté arrive sans saut
+        elif self.loaded_once:
+            self.redraw()  # on garde le zoom et la position pendant qu'on règle
+        else:
+            self.loaded_once = True
+            self.fit()
+
+    def _describe(self) -> None:
+        """Dimensions, couleur du cadre obtenue et épaisseur mesurée dans l'image."""
+        assert self.image is not None
+        width, height = self.image.size
+        config = resolve_photo_colors_for_path(self.source, config_for_photo(self.config_snapshot, self.source))
+        if self.panel is not None:
+            self.panel.show_resolved(border_color_of(config))
+        border = measure_border(self.image, border_color_of(config), skip_color=background_color_of(config))
+        if border:
+            percent = 100 * border / min(width, height)
+            self.info.set(t("viewer_info", width=width, height=height, border=border, percent=percent))
+        else:
+            self.info.set(t("viewer_info_noborder", width=width, height=height))
+
+    # ------------------------------------------------------------------ réglages en direct
+    def _features(self) -> frozenset:
+        try:
+            return kind_features(*peek_size(self.source), self.kind, self.config_snapshot)
+        except Exception:
+            return frozenset({"fill", "signature"})  # illisible : on ne grise rien
+
+    def _schedule_rerender(self) -> None:
+        if self._closing:
+            return
+        if self._rerender_job is not None:
+            self.after_cancel(self._rerender_job)
+        self._rerender_job = self.after(RERENDER_DELAY_MS, self._rerender)
+
+    def _rerender(self) -> None:
+        self._rerender_job = None
+        if self._closing:
+            return
+        try:
+            config = dict(self.ctx.collect_config())
+        except Exception:  # saisie en cours (champ vide…) : on attend la prochaine modification
+            return
+        self.config_snapshot = config
+        self.settings_changed = True
+        self.info.set(t("viewer_loading"))
+        self._launch()
+
+    # ------------------------------------------------------------------ zoom / déplacement
+    def _view_size(self) -> tuple:
+        return max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())
+
+    def fit(self) -> None:
+        if self.image is None:
+            return
+        self.view.fit(self.image.size, self._view_size())
+        self.redraw()
+
+    def set_zoom(self, zoom: float) -> None:
+        if self.image is not None and self.view.zoom_to(zoom, self._view_size()):
+            self.redraw()
+
+    def zoom_by(self, factor: float) -> None:
+        vw, vh = self._view_size()
+        self._zoom_at(vw / 2, vh / 2, factor)
+
+    def _zoom_at(self, cx: float, cy: float, factor: float) -> None:
+        if self.image is not None and self.view.zoom_at(cx, cy, factor):
+            self.redraw()
+
+    def _on_resize(self) -> None:
+        self.carousel.draw_arrows(self._view_size())
+        if self.image is None:
+            return
+        if self.view.fit_mode:
+            self.fit()
+        else:
+            self.redraw()
+
+    def _press(self, event) -> None:
+        if "nav" in self.canvas.gettags("current") or self.carousel.animating:
+            return  # clic sur une flèche de navigation, ou animation en cours
+        if self.navigator is not None and self.view.fit_mode:
+            self.carousel.begin_swipe(event.x)  # image entière à l'écran : on fait défiler le carrousel
+            return
+        self.pan = (event.x, event.y, self.view.ox, self.view.oy)  # zoomée : le glisser déplace l'image
+
+    def _drag(self, event) -> None:
+        if self.carousel.swiping:
+            self.carousel.swipe_move(event.x)
+            return
+        if not self.pan or self.image is None:
+            return
+        x0, y0, ox, oy = self.pan
+        self.view.pan_to(ox - (event.x - x0) / self.view.zoom, oy - (event.y - y0) / self.view.zoom)
+        self.redraw()
+
+    def _release(self, event) -> None:
+        self.pan = None
+        self.carousel.end_swipe()
+
+    # ------------------------------------------------------------------ navigation entre les images
+    def _slide_distance(self) -> float:
+        """Écart entre deux images du carrousel, en pixels écran."""
+        if self.image is None:
+            return float(self._view_size()[0])
+        return self.image.width * self.view.zoom * (1 + CAROUSEL_GAP)
+
+    def _update_position(self) -> None:
+        if self.navigator is None:
+            return
+        number, total = self.navigator.viewer_position()
+        self.position_label.configure(text=f"{number} / {total}" if total else "")
+
+    def _key_step(self, delta: int) -> None:
+        """Flèches du clavier : on n'intercepte pas la frappe quand on édite un champ du panneau de réglages."""
+        try:
+            focused = self.focus_get()
+        except (KeyError, tk.TclError):
+            focused = None
+        if isinstance(focused, (tk.Entry, ttk.Entry, tk.Spinbox, ttk.Spinbox, ttk.Combobox)):
+            return
+        self.step(delta)
+
+    def step(self, delta: int) -> None:
+        """Image suivante (+1) ou précédente (-1) : en carrousel, elle arrive en glissant."""
+        if self.carousel.animating or not self.carousel.can_step(delta):
+            return
+        if (self.carousel.enabled.get() and self.view.fit_mode and self.image is not None
+                and self.carousel.neighbors.get(delta) is not None):
+            self.carousel.step(delta)
+            return
+        tile = self.navigator.viewer_step(delta)
+        if tile is not None:
+            self.show(tile.source, tile.kind)
+
+    def _commit_step(self, delta: int) -> None:
+        """Le glissement est terminé : l'image voisine devient l'image affichée, sans passer par un écran vide."""
+        old, incoming = self.image, self.carousel.neighbors.get(delta)
+        tile = self.navigator.viewer_step(delta)
+        if tile is None:
+            self.carousel.reset()
+            return
+        behind = None
+        if old is not None:
+            behind = old.copy()
+            behind.thumbnail((NEIGHBOR_SIDE, NEIGHBOR_SIDE), Image.Resampling.BILINEAR)
+        self.show(tile.source, tile.kind, placeholder=incoming, behind=(-delta, behind))
+
+    def show(self, source: Path, kind: str, placeholder=None, behind=None) -> None:
+        """Affiche une autre image dans la même fenêtre (zoom et règle repartent de zéro). `placeholder` : aperçu réduit
+        montré en attendant la pleine résolution ; `behind` : (côté, image réduite) de l'image qu'on vient de quitter."""
+        if self._rerender_job is not None:
+            self.after_cancel(self._rerender_job)
+            self._rerender_job = None
+        self.source, self.kind = source, kind
+        self.title(f"{source.name} — {kind_label(kind)}")
+        self.image = self.photo = None
+        self.loaded_once = False
+        self.pan = None
+        self.view.fit_mode = True
+        self.carousel.reset(behind)
+        self.ruler.clear()
+        self.canvas.delete("img", "neigh")
+        self.measure.set(t("viewer_hint"))
+        self.info.set(t("viewer_loading"))
+        self.placeholder = placeholder is not None
+        if placeholder is not None:
+            self.image = placeholder
+            self.loaded_once = True
+            self.fit()
+        if self.ctx is not None:
+            self.config_snapshot = dict(self.ctx.collect_config())
+        if self.panel is not None:
+            self.panel.set_source(source)
+            self.panel.apply_features(self._features())
+        self._launch()
+        self._update_position()
+        self.carousel.draw_arrows(self._view_size())
+
+    # ------------------------------------------------------------------ dessin
+    def redraw(self) -> None:
+        canvas = self.canvas
+        canvas.delete("img", "neigh")
+        self.zoom_label.configure(text=t("viewer_zoom", percent=self.view.zoom * 100))
+        if self.image is None:
+            return
+        view, size = self.view, self._view_size()
+        box = view.visible_box(self.image.size, size)
+        if box is None:
+            return
+        crop = self.image.crop(box)
+        out_w = max(1, int(round((box[2] - box[0]) * view.zoom)))
+        out_h = max(1, int(round((box[3] - box[1]) * view.zoom)))
+        resample = Image.Resampling.NEAREST if view.zoom >= 1 else Image.Resampling.BILINEAR
+        self.photo = ImageTk.PhotoImage(crop.resize((out_w, out_h), resample))
+        canvas.create_image((box[0] - view.ox) * view.zoom + self.carousel.slide_px, (box[1] - view.oy) * view.zoom,
+                            anchor=tk.NW, image=self.photo, tags="img")
+        canvas.tag_lower("img")
+        self.carousel.draw(self.image, view, size)
+        self.ruler.draw()
+        canvas.tag_raise("nav")
+
+    def close(self) -> None:
+        self._closing = True
+        self.carousel.close()
+        changed = self.settings_changed and self.on_settings_changed is not None
+        self.destroy()
+        if changed:
+            self.on_settings_changed()

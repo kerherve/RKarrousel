@@ -9,7 +9,7 @@ from PIL import Image
 
 from rkarrousel.formats import output_format_of
 from rkarrousel.gui.crop_editor import CropEditor
-from rkarrousel.gui.image_viewer import ImageViewer
+from rkarrousel.gui.viewer import ImageViewer
 from rkarrousel.gui.order.grid_canvas import GridCanvas
 from rkarrousel.gui.order.grid_layout import GridLayout
 from rkarrousel.gui.order.model import OrderModel, render_signature

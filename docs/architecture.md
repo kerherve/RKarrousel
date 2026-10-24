@@ -58,12 +58,14 @@ exclusions et le préfixe numérique (`01_`) s'expriment tous avec ces clés (`p
 - `app.py` : `PhotoSplitterGUI` assemble le contexte, les contrôleurs et les onglets.
 - `context.py` : `AppContext`, état partagé (config, modèle des réglages, thème, barre d'état, bus d'événements).
 - `settings_model.py` : `SettingsModel`, les variables Tk de tous les réglages ; `collect()` / `apply(valeurs)` font le lien avec le JSON.
-- `settings_tab.py` + `settings_groups.py` : un groupe par bloc de réglages (préréglages, cadre, fond, signature, sortie, types, Drive, mises à jour).
+- `settings_tab.py` + `settings_groups/` : un groupe par bloc de réglages, rangés par thème — `presets_group`, `look` (cadre, fond, signature), `output` (format, taille, types d'images), `appearance` (langue, thème, mises à jour), `drive_group`.
 - `files_tab.py`, `summary.py` : liste des photos, aperçu, récapitulatif de fin de traitement.
 - `events.py` : **bus d'événements**. Les threads de travail y *postent* des messages ; seul le thread Tk les distribue. Aucun widget n'est touché hors du thread Tk.
 - `batch_controller`, `drive_controller`, `update_controller`, `order_flow` : un contrôleur par fonction, chacun porte son propre thread et ses messages.
 - `order/` : la grille « Aperçu et ordre », en cinq pièces — `grid_layout` (géométrie), `model` (ordre et exclusions), `thumbnails` (rendu des vignettes en arrière-plan), `grid_canvas` (dessin et glisser-déposer), `window`.
-- `crop_editor.py`, `image_viewer.py`, `guide_window.py`, `update_dialog.py` : fenêtres secondaires.
+- `viewer/` : la visionneuse « Voir en grand », en pièces — `viewport` (zoom et déplacement, sans Tk), `render_jobs` (calculs en arrière-plan, avec numéro de génération pour ignorer les résultats périmés), `carousel` (voisines, défilement à la souris, animation), `ruler` (mesure en pixels), `settings_panel` (réglages en direct), `window` (assemble le tout).
+- `photo_frame_group.py` : couleur du cadre propre à une photo, couleur obtenue et retouche fine (utilisé par la visionneuse).
+- `crop_editor.py`, `guide_window.py`, `update_dialog.py` : fenêtres secondaires.
 - `widgets.py` : composants communs (`ChoiceBox`, `ColorPicker`, `HintLabel`, `make_scrollable`, `bind_trace`).
 - Changer la langue ou le thème **reconstruit** toute l'interface (`PhotoSplitterGUI._rebuild`).
 

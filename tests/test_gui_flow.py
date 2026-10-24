@@ -220,24 +220,24 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: window.layout.tile_w < 400)
 
     def test_viewer_adjusts_frame_and_fill_live_and_refreshes_the_grid(self):
-        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui import viewer as viewer_pkg
 
         window = self.open_order_window(self.photos[:1])
         window.select(0)
         window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
         self.pump(lambda: viewer.image is not None)
         refreshed = []
         viewer.on_settings_changed = lambda: refreshed.append(True)
 
         self.assertIn("cadre mesuré", viewer.info.get())
         self.app.model.no_frame.set(True)  # l'image doit être recalculée, sans cadre
-        self.pump(lambda: viewer.generation == 1 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
+        self.pump(lambda: viewer.jobs.generation >= 2 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
         viewer.close()
         self.assertEqual(refreshed, [True])  # la grille est rafraîchie à la fermeture
 
     def test_viewer_greys_out_settings_the_displayed_image_does_not_use(self):
-        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui import viewer as viewer_pkg
 
         self.app.model.signature_path.set(str(self.dir / "sig.png"))
         Image.new("RGBA", (200, 80), (255, 255, 255, 255)).save(self.dir / "sig.png")
@@ -247,44 +247,44 @@ class GuiFlowTests(unittest.TestCase):
             index = next(i for i, tile in enumerate(window.tiles) if tile.kind == kind)
             window.select(index)
             window.view_selected()
-            return [w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer)][-1]
+            return [w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer)][-1]
 
         def enabled(group):
             return all("disabled" not in child.state() for child in group.winfo_children()
                        if isinstance(child, ttk.Radiobutton))
 
         part = open_viewer("part1")
-        self.assertFalse(enabled(part.fill_group))
-        self.assertIn("non applicable", part.fill_group.cget("text"))
-        self.assertIn("non applicable", part.signature_group.cget("text"))
+        self.assertFalse(enabled(part.panel.fill_group))
+        self.assertIn("non applicable", part.panel.fill_group.cget("text"))
+        self.assertIn("non applicable", part.panel.signature_group.cget("text"))
         part.close()
         whole = open_viewer("part1_with_sig")
-        self.assertTrue(enabled(whole.fill_group))
-        self.assertNotIn("non applicable", whole.signature_group.cget("text"))
+        self.assertTrue(enabled(whole.panel.fill_group))
+        self.assertNotIn("non applicable", whole.panel.signature_group.cget("text"))
         whole.close()
 
     def test_viewer_sets_a_frame_colour_for_this_photo_only(self):
-        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui import viewer as viewer_pkg
         from rkarrousel.gui.photo_frame_group import PhotoFrameGroup
 
         window = self.open_order_window(self.photos[:2])
         window.select(0)
         window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
         self.pump(lambda: viewer.image is not None)
         group = self._find(viewer, PhotoFrameGroup)
         self.assertEqual(group.mode.get(), "global")
         group.mode.set("contrast")  # cette photo seulement
         key = str(self.photos[0])
         self.assertEqual(self.app.ctx.config["photo_overrides"][key]["border_color_mode"], "contrast")
-        self.pump(lambda: viewer.generation == 1 and viewer.settings_changed and "px" in viewer.info.get())
+        self.pump(lambda: viewer.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
         self.assertEqual(self.app.model.border_color_mode.get(), "fixed")  # le réglage général n'a pas bougé
         self.assertRegex(group.resolved_text.cget("text"), r"^#[0-9A-F]{6}$")  # la couleur obtenue est affichée
         before = group.resolved_text.cget("text")
         group.tweaks[2].set(0.5)  # retouche fine : un peu plus clair
         self.pump(lambda: "border_tweak" in self.app.ctx.config["photo_overrides"].get(key, {}))
         self.assertGreater(self.app.ctx.config["photo_overrides"][key]["border_tweak"][2], 0)
-        self.pump(lambda: viewer.generation >= 2 and group.resolved_text.cget("text") != before)
+        self.pump(lambda: viewer.jobs.generation >= 3 and group.resolved_text.cget("text") != before)
         group.tweaks[0].set(0.6)
         for name in ("ButtonPress-1", "ButtonRelease-1", "ButtonPress-1", "ButtonRelease-1"):  # un double-clic
             group.scales[0].event_generate(f"<{name}>", x=40, y=5)
@@ -304,55 +304,117 @@ class GuiFlowTests(unittest.TestCase):
                 return found
         return None
 
+    def swipe(self, viewer, dx):
+        """Glisse à la souris sur l'image, de `dx` pixels (négatif : vers la gauche)."""
+        canvas, x, y = viewer.canvas, 300, 200
+        canvas.event_generate("<ButtonPress-1>", x=x, y=y)
+        for step in range(1, 9):
+            canvas.event_generate("<B1-Motion>", x=x + dx * step // 8, y=y, state=0x100)
+            self.root.update()
+        canvas.event_generate("<ButtonRelease-1>", x=x + dx, y=y)
+
+    def test_viewer_swipes_like_an_instagram_carousel(self):
+        from rkarrousel.gui import viewer as viewer_pkg
+
+        window = self.open_order_window(self.photos[:2])
+        window.select(1)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        self.pump(lambda: viewer.image is not None and viewer.carousel.neighbors[1] is not None and viewer.carousel.neighbors[-1] is not None)
+        self.assertTrue(viewer.view.fit_mode)
+        width = viewer._slide_distance()
+        self.swipe(viewer, -int(width * 0.6))  # vers la gauche, assez loin : image suivante
+        self.pump(lambda: window.model.selected == 2 and not viewer.carousel.animating)
+        self.assertEqual(viewer.carousel.slide_px, 0.0)
+        self.assertIsNotNone(viewer.image)  # jamais d'écran vide : l'aperçu réduit prend le relais
+        self.pump(lambda: viewer.carousel.neighbors[-1] is not None)  # l'image qu'on vient de quitter reste visible à gauche
+        self.swipe(viewer, int(width * 0.05))  # trop court : l'image revient en place
+        self.pump(lambda: not viewer.carousel.animating and viewer.carousel.slide_px == 0.0)
+        self.assertEqual(window.model.selected, 2)
+        self.swipe(viewer, int(width * 0.6))  # vers la droite : l'image précédente
+        self.pump(lambda: window.model.selected == 1 and not viewer.carousel.animating)
+        viewer.close()
+
+    def test_swiping_past_the_last_image_springs_back(self):
+        from rkarrousel.gui import viewer as viewer_pkg
+
+        window = self.open_order_window(self.photos[:1])  # une seule image
+        window.select(0)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        self.swipe(viewer, -400)
+        self.pump(lambda: not viewer.carousel.animating and viewer.carousel.slide_px == 0.0)
+        self.assertEqual(window.model.selected, 0)
+        viewer.close()
+
+    def test_zoomed_viewer_pans_instead_of_swiping(self):
+        from rkarrousel.gui import viewer as viewer_pkg
+
+        window = self.open_order_window(self.photos[:2])
+        window.select(1)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        viewer.set_zoom(1.0)  # zoomée : le glisser déplace l'image
+        self.assertFalse(viewer.view.fit_mode)
+        before = viewer.view.ox
+        self.swipe(viewer, -200)
+        self.root.update()
+        self.assertEqual(window.model.selected, 1)
+        self.assertNotEqual(viewer.view.ox, before)
+        viewer.close()
+
     def test_viewer_rerenders_when_the_colour_source_changes(self):
-        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui import viewer as viewer_pkg
 
         self.app.model.border_color_mode.set("dominant")
         window = self.open_order_window(self.photos[:1])
         window.select(0)
         window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
         self.pump(lambda: viewer.image is not None)
         self.app.model.color_source.set("edges")
-        self.pump(lambda: viewer.generation == 1 and viewer.settings_changed and "px" in viewer.info.get())
+        self.pump(lambda: viewer.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
         self.assertEqual(viewer.config_snapshot["color_source"], "edges")
         viewer.close()
 
     def test_viewer_steps_through_the_images_with_arrows_and_keys(self):
-        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui import viewer as viewer_pkg
         from rkarrousel.i18n import kind_label
 
         window = self.open_order_window(self.photos[:2])  # 1 image + 4 images (paysage) = 5
         window.select(0)
         window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
         self.pump(lambda: viewer.image is not None)
         self.assertEqual(viewer.position_label.cget("text"), "1 / 5")
         self.assertFalse(window.viewer_can_step(-1))  # première image : pas de flèche précédente
         # carrousel : la suivante est affichée à droite, pas de précédente avant la première
-        self.pump(lambda: viewer.neighbors[1] is not None)
-        self.assertIsNone(viewer.neighbors[-1])
+        self.pump(lambda: viewer.carousel.neighbors[1] is not None)
+        self.assertIsNone(viewer.carousel.neighbors[-1])
         self.root.update()
         self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 1)
-        viewer.carousel.set(False)
+        viewer.carousel.enabled.set(False)
         viewer.redraw()
         self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 0)
-        viewer.carousel.set(True)
+        viewer.carousel.enabled.set(True)
         first_source = viewer.source
-        viewer.step(1)
-        self.assertEqual(window.model.selected, 1)
+        viewer.step(1)  # en carrousel, l'image suivante arrive en glissant
+        self.pump(lambda: window.model.selected == 1 and not viewer.carousel.animating)
         self.assertEqual(viewer.position_label.cget("text"), "2 / 5")
         self.assertIn(kind_label(window.model.tiles[1].kind), viewer.title())
-        self.pump(lambda: viewer.image is not None and viewer.generation == 1)
+        self.pump(lambda: viewer.image is not None and viewer.jobs.generation >= 2)
+        self.pump(lambda: viewer.image is not None and not viewer.placeholder and viewer.carousel.neighbors[1] is not None)
         viewer._key_step(1)
-        self.assertEqual(window.model.selected, 2)
+        self.pump(lambda: window.model.selected == 2 and not viewer.carousel.animating)
         # une image exclue est sautée
         window.select(3)
         window.toggle_exclude()
         window.select(2)
         viewer.show(window.model.tiles[2].source, window.model.tiles[2].kind)
         viewer.step(1)
-        self.assertEqual(window.model.selected, 4)
+        self.pump(lambda: window.model.selected == 4 and not viewer.carousel.animating)
         viewer.step(1)  # dernière : rien ne bouge
         self.assertEqual(window.model.selected, 4)
         self.assertNotEqual(first_source, None)

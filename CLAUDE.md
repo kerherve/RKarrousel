@@ -17,4 +17,5 @@ Appli Windows (Python 3, Tkinter, Pillow) qui prépare des photos pour Instagram
 - Les rendus par défaut doivent rester **identiques au pixel** après une refonte : comparer les empreintes avant/après.
 - Tests Tk : terminer `tearDown` par `self.app = self.root = None` puis `gc.collect()`.
 - Tout texte visible : `t("clé")` en FR et EN ; le nom de l'asset de mise à jour `RKarrousel-vX.Y.Z.exe` est un contrat.
+- **Refonte à chaque fonctionnalité** : avant de rendre la main, relire les tailles de fichiers (`wc -l`), découper ce qui grossit (viser < ~300 lignes, une responsabilité par module), ranger par thème, mettre à jour `docs/architecture.md` et les tests.
 - Le numéro de version est dans `rkarrousel/version.py` uniquement ; avant de taguer, ajouter la section `## vX.Y.Z` de `CHANGELOG.md`, en anglais ET en français (texte de la release).

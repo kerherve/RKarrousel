@@ -63,6 +63,7 @@ Les détails (et les pièges rencontrés) sont dans `.claude/skills/rkarrousel-r
 
 ## Conventions
 
+- **Chaque fonctionnalité se termine par une étape de refonte** : un fichier qui dépasse quelques centaines de lignes ou une classe qui mélange plusieurs rôles se découpe en pièces (la logique sans Tk à part, pour la tester sans écran), les répertoires restent thématiques, les tests suivent.
 - Commentaires et docstrings en français, noms de code en anglais ; un module = une responsabilité, et pas de fichier de plus de quelques centaines de lignes.
 - Tout texte visible passe par `t("clé")` et existe en français **et** en anglais.
 - Une nouvelle fonctionnalité visible met à jour le guide (`i18n/guide_*.py`, puis `python tools/build_docs.py`) et `docs/config.md` si elle ajoute un réglage.
