@@ -14,18 +14,20 @@ from PIL import Image, ImageTk
 from rkarrousel.gui.viewer.carousel import CAROUSEL_GAP, Carousel
 from rkarrousel.gui.viewer.frame_report import report_for
 from rkarrousel.gui.viewer.loader import ImageLoader
-from rkarrousel.gui.viewer.render_jobs import NEIGHBOR_SIDE
+from rkarrousel.gui.viewer.render_jobs import PREVIEW_SIDE
+from rkarrousel.gui.viewer.resolution import Resolution
 from rkarrousel.gui.viewer.ruler import Ruler
 from rkarrousel.gui.viewer.settings_panel import SettingsPanel
 from rkarrousel.gui.viewer.toolbar import ViewerToolbar
 from rkarrousel.gui.viewer.viewport import ZOOM_STEP, Viewport
+from rkarrousel.gui.widgets import Debouncer
 from rkarrousel.i18n import kind_label, t
 from rkarrousel.kinds import KIND_CROP
 from rkarrousel.outputs import kind_features
 from rkarrousel.pipeline import peek_size
 
-FULL_RES_DELAY_MS = 250  # en feuilletant, la pleine résolution n'est calculée qu'une fois qu'on s'arrête
-RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
+PREVIEW_DELAY_MS = 100   # en feuilletant, l'aperçu net n'est calculé qu'une fois qu'on s'arrête
+RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image
 
 
 class ViewerView(ttk.Frame):
@@ -55,18 +57,19 @@ class ViewerView(ttk.Frame):
         self.view = Viewport()
         self.pan: Optional[tuple] = None
         self.loaded_once = False
-        self.placeholder = False  # l'image affichée est un aperçu réduit, la pleine résolution arrive
+        self.placeholder = False  # l'image affichée est un aperçu provisoire (flou), l'aperçu net arrive
+        self.resolution = Resolution()  # aperçu ou pleine résolution (voir resolution.py)
         self.settings_changed = False
         self._closing = False
-        self._rerender_job = None
-        self._full_job = None
+        self._rerender = Debouncer(self, RERENDER_DELAY_MS, self._recalculate)  # attend la fin d'un geste sur les réglages
+        self._main_delay = Debouncer(self, PREVIEW_DELAY_MS, self._launch_main)  # attend qu'on cesse de feuilleter
         self.loader: Optional[ImageLoader] = None
 
         self.panel: Optional[SettingsPanel] = None
         self._build_ui()
         if self.panel is not None:
             self.panel.apply_features(self._features())  # grise ce que cette image n'utilise pas
-        self.ruler = Ruler(self.canvas, self.measure, lambda: self.view.zoom)
+        self.ruler = Ruler(self.canvas, self.measure, lambda: self.view.zoom / self.resolution.factor)  # en pixels réels
         self.carousel = Carousel(self.canvas, navigator, self.scale_ui, self._slide_distance, self._commit_step)
         self.loader = ImageLoader(self, navigator, self.carousel, self._show_rendered, self._show_error, self._neighbor_arrived)
         self._finish_toolbar()
@@ -143,8 +146,8 @@ class ViewerView(ttk.Frame):
         return f"{self.source.name} — {kind_label(self.kind)}"
 
     # ------------------------------------------------------------------ calcul de l'image
-    def _launch(self, main: bool, keep_neighbors: bool) -> None:
-        self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors)
+    def _launch(self, main: bool, keep_neighbors: bool, full: bool = False) -> None:
+        self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors, full)
 
     def _neighbor_arrived(self) -> None:
         if self.image is not None:
@@ -153,17 +156,31 @@ class ViewerView(ttk.Frame):
     def _show_error(self, message: str) -> None:
         self.info.set(t("order_error", message=message))
 
-    def _show_rendered(self, image: Image.Image) -> None:
+    def _show_rendered(self, image: Image.Image, full: bool = False) -> None:
+        """L'image affichée est prête : un aperçu net, ou (à la demande) la pleine résolution."""
         self.image = image
+        previous = self.resolution.update(image, full, self.source, self.config_snapshot)
+        if full:
+            Resolution.rescale_view(self.view, previous)
         self._describe()
         if self.placeholder:
             self.placeholder = False
-            self.fit()  # même taille d'affichage que l'aperçu réduit : la netteté arrive sans saut
+            self.fit()  # même taille d'affichage que l'aperçu provisoire : la netteté arrive sans saut
         elif self.loaded_once:
-            self.redraw()  # on garde le zoom et la position pendant qu'on règle
+            if full and self.view.fit_mode:
+                self.fit()
+            else:
+                self.redraw()  # on garde le zoom et la position pendant qu'on règle
         else:
             self.loaded_once = True
             self.fit()
+        self._check_full()
+
+    def _check_full(self) -> None:
+        """Zoomer au-delà de l'aperçu le rendrait flou : on charge alors la pleine résolution (une fois)."""
+        if self.image is not None and self.resolution.wants_full(self.view.zoom):
+            self.resolution.pending = True
+            self._launch(main=True, keep_neighbors=False, full=True)
 
     def _describe(self) -> None:
         """Dimensions, couleur du cadre obtenue et épaisseur mesurée dans l'image."""
@@ -171,11 +188,12 @@ class ViewerView(ttk.Frame):
         report = report_for(self.image, self.source, self.config_snapshot)
         if self.panel is not None:
             self.panel.show_resolved(report.color)
+        factor = self.resolution.factor  # un aperçu est plus petit que l'image finale : on annonce les dimensions réelles (estimées)
+        width, height, border = round(report.width * factor), round(report.height * factor), round(report.border * factor)
         if report.border:
-            self.info.set(t("viewer_info", width=report.width, height=report.height, border=report.border,
-                            percent=report.percent))
+            self.info.set(t("viewer_info", width=width, height=height, border=border, percent=report.percent))
         else:
-            self.info.set(t("viewer_info_noborder", width=report.width, height=report.height))
+            self.info.set(t("viewer_info_noborder", width=width, height=height))
 
     # ------------------------------------------------------------------ réglages en direct
     def _features(self) -> frozenset:
@@ -185,14 +203,10 @@ class ViewerView(ttk.Frame):
             return frozenset({"fill", "signature"})  # illisible : on ne grise rien
 
     def _schedule_rerender(self) -> None:
-        if self._closing:
-            return
-        if self._rerender_job is not None:
-            self.after_cancel(self._rerender_job)
-        self._rerender_job = self.after(RERENDER_DELAY_MS, self._rerender)
+        if not self._closing:
+            self._rerender.trigger()
 
-    def _rerender(self) -> None:
-        self._rerender_job = None
+    def _recalculate(self) -> None:
         if self._closing:
             return
         try:
@@ -202,7 +216,7 @@ class ViewerView(ttk.Frame):
         self.config_snapshot = config
         self.settings_changed = True
         self.info.set(t("viewer_loading"))
-        self._launch(main=True, keep_neighbors=False)
+        self._launch(main=True, keep_neighbors=False, full=self.resolution.full_loaded)
 
     # ------------------------------------------------------------------ zoom / déplacement
     def _view_size(self) -> tuple:
@@ -215,8 +229,10 @@ class ViewerView(ttk.Frame):
         self.redraw()
 
     def set_zoom(self, zoom: float) -> None:
-        if self.image is not None and self.view.zoom_to(zoom, self._view_size()):
+        """Zoom en pixels réels (1 = 100 %) : sur un aperçu, c'est un zoom plus fort, donc la pleine résolution est chargée."""
+        if self.image is not None and self.view.zoom_to(zoom * self.resolution.factor, self._view_size()):
             self.redraw()
+            self._check_full()
 
     def zoom_by(self, factor: float) -> None:
         vw, vh = self._view_size()
@@ -225,6 +241,7 @@ class ViewerView(ttk.Frame):
     def _zoom_at(self, cx: float, cy: float, factor: float) -> None:
         if self.image is not None and self.view.zoom_at(cx, cy, factor):
             self.redraw()
+            self._check_full()
 
     def _on_resize(self) -> None:
         self.carousel.draw_arrows(self._view_size())
@@ -270,7 +287,7 @@ class ViewerView(ttk.Frame):
     def _open_crop(self) -> None:
         """« Recadrer… » : le même éditeur que dans la grille ; l'image se recalcule une fois le cadrage validé."""
         if self.navigator is not None and self.kind == KIND_CROP:
-            self.navigator.viewer_crop(self, self._rerender)
+            self.navigator.viewer_crop(self, self._recalculate)
 
     def _update_position(self) -> None:
         if self.navigator is None:
@@ -310,16 +327,14 @@ class ViewerView(ttk.Frame):
         behind = None
         if old is not None:
             behind = old.copy()
-            behind.thumbnail((NEIGHBOR_SIDE, NEIGHBOR_SIDE), Image.Resampling.BILINEAR)
+            behind.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.BILINEAR)
         self.show(tile.source, tile.kind, placeholder=incoming, behind=(-delta, behind))
 
     def show(self, source: Path, kind: str, placeholder=None, behind=None) -> None:
         """Affiche une autre image dans la même fenêtre (zoom et règle repartent de zéro). `placeholder` : aperçu réduit
         montré en attendant la pleine résolution ; `behind` : (côté, image réduite) de l'image qu'on vient de quitter."""
-        for job in (self._rerender_job, self._full_job):
-            if job is not None:
-                self.after_cancel(job)
-        self._rerender_job = self._full_job = None
+        self._rerender.cancel()
+        self._main_delay.cancel()
         self.source, self.kind = source, kind
         self.caption.set(self._caption())
         self.image = self.photo = None
@@ -331,6 +346,7 @@ class ViewerView(ttk.Frame):
         self.canvas.delete("img", "neigh")
         self.measure.set(t("viewer_hint"))
         self.info.set(t("viewer_loading"))
+        self.resolution.reset()
         self.placeholder = placeholder is not None
         if placeholder is not None:
             self.image = placeholder
@@ -341,14 +357,16 @@ class ViewerView(ttk.Frame):
         if self.panel is not None:
             self.panel.set_source(source)
             self.panel.apply_features(self._features())
-        self._launch(main=False, keep_neighbors=True)  # voisines tout de suite (aperçus de la grille)
-        self._full_job = self.after(FULL_RES_DELAY_MS, self._launch_full)  # pleine résolution une fois arrêté
+        self._launch(main=False, keep_neighbors=True)  # voisines tout de suite (cache, ou aperçus de la grille)
+        if self.loader.cache.get(source, kind, self.config_snapshot) is not None:
+            self._launch_main()  # déjà calculé : on l'affiche sans attendre
+        else:
+            self._main_delay.trigger()  # sinon une fois qu'on s'arrête
         self._update_position()
         self._update_crop_button()
         self.carousel.draw_arrows(self._view_size())
 
-    def _launch_full(self) -> None:
-        self._full_job = None
+    def _launch_main(self) -> None:
         if not self._closing:
             self._launch(main=True, keep_neighbors=True)
 
@@ -356,7 +374,7 @@ class ViewerView(ttk.Frame):
     def redraw(self) -> None:
         canvas = self.canvas
         canvas.delete("img", "neigh")
-        self.toolbar.set_zoom(self.view.zoom)
+        self.toolbar.set_zoom(self.view.zoom / self.resolution.factor)
         if self.image is None:
             return
         view, size = self.view, self._view_size()
@@ -383,11 +401,5 @@ class ViewerView(ttk.Frame):
 
     def _on_destroy(self) -> None:
         self._closing = True
-        for job in (self._rerender_job, self._full_job):  # pas de rappel sur une fenêtre détruite
-            if job is not None:
-                try:
-                    self.after_cancel(job)
-                except tk.TclError:
-                    pass
         self.carousel.close()
         self.loader.close()

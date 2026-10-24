@@ -207,6 +207,10 @@ class GuiFlowTests(unittest.TestCase):
         window.adjust_selected()
         return self.app.flow.pages["adjust"].viewer
 
+    def show_viewer_on(self, window, index):
+        window.select(index)
+        return self.show_viewer(window)
+
     def leave_viewer(self):
         if self.app.flow.index == 2:
             self.app.flow.go(1)
@@ -455,6 +459,45 @@ class GuiFlowTests(unittest.TestCase):
         self.assertIsNotNone(viewer.image)
         self.pump(lambda: not viewer.placeholder)  # …puis la pleine résolution le remplace
         self.leave_viewer()
+
+    def test_a_big_photo_shows_a_sharp_preview_and_loads_full_resolution_only_when_zooming(self):
+        big = make_image(self.dir, "big.jpg", (3600, 4800))
+        window = self.open_order_window([big])
+        viewer = self.show_viewer_on(window, 0)
+        self.pump(lambda: viewer.image is not None and viewer.loader.jobs.generation > 0)
+        self.pump(lambda: viewer.image is not None and viewer.image.width < 3000)
+        self.assertFalse(viewer.resolution.is_full)
+        self.assertGreater(viewer.resolution.factor, 2.0)  # l'aperçu est environ 2,6 fois plus petit que la pleine résolution
+        self.assertLess(viewer.image.height, 2400)
+        self.assertIn("3", viewer.info.get())  # les dimensions annoncées sont celles de la pleine résolution (estimées)
+        # zoom à 100 % : en pixels réels, donc la pleine résolution est chargée, et la vue reste au même endroit
+        viewer.set_zoom(1.0)
+        self.pump(lambda: viewer.resolution.full_loaded)
+        self.assertEqual(viewer.resolution.factor, 1.0)
+        self.assertGreater(viewer.image.height, 4800)
+        self.assertAlmostEqual(viewer.view.zoom, 1.0, places=2)
+        self.assertIn("100", viewer.toolbar.zoom_label.cget("text"))
+        viewer.fit()
+        self.assertTrue(viewer.view.fit_mode)
+
+    def test_a_small_photo_needs_no_preview_level(self):
+        window = self.open_order_window(self.photos[:1])  # 900×1200 : plus petit que l'aperçu
+        viewer = self.show_viewer_on(window, 0)
+        self.pump(lambda: viewer.image is not None)
+        self.assertTrue(viewer.resolution.is_full)
+        self.assertEqual(viewer.resolution.factor, 1.0)
+
+    def test_going_back_to_a_photo_already_seen_is_instant(self):
+        window = self.open_order_window(self.photos[:2])
+        first = window.model.tiles[1]
+        viewer = self.show_viewer_on(window, 1)
+        self.pump(lambda: viewer.image is not None and viewer.loader.cache.get(first.source, first.kind, viewer.config_snapshot))
+        seen = viewer.loader.cache.get(first.source, first.kind, viewer.config_snapshot)
+        viewer.carousel.enabled.set(False)  # pas d'animation : changement direct
+        viewer.step(1)
+        self.pump(lambda: window.model.selected == 2 and viewer.image is not None and viewer.image is not seen)
+        viewer.step(-1)  # retour : l'aperçu net vient du cache, aucun nouveau calcul n'est nécessaire
+        self.pump(lambda: window.model.selected == 1 and viewer.image is seen)
 
     def test_viewer_rerenders_when_the_colour_source_changes(self):
 

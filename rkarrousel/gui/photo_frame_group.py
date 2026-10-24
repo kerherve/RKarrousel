@@ -8,7 +8,7 @@ from typing import Callable, Tuple
 from rkarrousel.config import COLOR_MODES, TWEAK_LIMITS, border_tweak_of, photo_override_for
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.settings_groups import color_mode_labels
-from rkarrousel.gui.widgets import ChoiceBox, ColorPicker, HintLabel, bind_trace
+from rkarrousel.gui.widgets import ChoiceBox, ColorPicker, Debouncer, HintLabel, bind_trace
 from rkarrousel.i18n import t
 
 GLOBAL = "global"  # pas de réglage propre à la photo : on suit les réglages généraux
@@ -20,7 +20,7 @@ class PhotoFrameGroup(ttk.LabelFrame):
         super().__init__(parent, text=t("photo_group"), padding=12)
         self.ctx, self.source, self.on_change = ctx, source, on_change
         self._loading = False
-        self._tweak_job = None
+        self._tweak_debounce = Debouncer(self, TWEAK_DELAY_MS, self._commit_tweak)
         current = photo_override_for(ctx.config, source)
         self.mode = tk.StringVar(value=current.get("border_color_mode", GLOBAL))
         self.color = tk.StringVar(value=current.get("border_color", ctx.model.border_color.get()))
@@ -116,14 +116,10 @@ class PhotoFrameGroup(ttk.LabelFrame):
         self.on_change()
 
     def _tweak_changed(self) -> None:
-        if self._loading:
-            return
-        if self._tweak_job is not None:
-            self.after_cancel(self._tweak_job)
-        self._tweak_job = self.after(TWEAK_DELAY_MS, self._commit_tweak)
+        if not self._loading:
+            self._tweak_debounce.trigger()
 
     def _commit_tweak(self) -> None:
-        self._tweak_job = None
         self.store()
         self.on_change()
 

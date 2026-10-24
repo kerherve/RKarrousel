@@ -8,7 +8,7 @@ from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.flow.pages.base import Page
 from rkarrousel.gui.order.view import OrderView
 from rkarrousel.gui.settings_groups import KindsGroup
-from rkarrousel.gui.widgets import bind_trace
+from rkarrousel.gui.widgets import Debouncer, bind_trace
 
 SIDE_WIDTH = 380  # pixels à 96 ppp : colonne des images produites
 RELOAD_DELAY_MS = 300  # on attend la fin des modifications des cases avant de refaire la grille
@@ -20,7 +20,7 @@ class OrderPage(Page):
         super().__init__(parent)
         self.ctx, self.on_adjust, self.on_change = ctx, on_adjust, on_change
         self.view: Optional[OrderView] = None
-        self._reload_job = None
+        self._reload_debounce = Debouncer(self, RELOAD_DELAY_MS, self._reload)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
         self.holder = ttk.Frame(self)
@@ -55,14 +55,10 @@ class OrderPage(Page):
         self.ensure_view()
 
     def _kinds_changed(self) -> None:
-        if self.view is None:
-            return
-        if self._reload_job is not None:
-            self.after_cancel(self._reload_job)
-        self._reload_job = self.after(RELOAD_DELAY_MS, self._reload)
+        if self.view is not None:
+            self._reload_debounce.trigger()
 
     def _reload(self) -> None:
-        self._reload_job = None
         if self.view is not None:
             self.ensure_view()
 

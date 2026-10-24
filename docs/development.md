@@ -30,7 +30,7 @@ python tools/build_docs.py --check            # les guides Markdown sont-ils à 
 | `test_gdrive`, `test_updater` | Google Drive et mise à jour contre de **faux serveurs** locaux (jamais le vrai réseau) |
 | `test_order_model` | Ordre, exclusions, géométrie de la grille |
 | `test_flow_steps`, `test_gui_steps` | Étapes du flux (règles sans écran, puis boutons, bandeau, traitement, langue) |
-| `test_viewer_logic`, `test_kind_features`, `test_placement`, `test_color_sources` | Visionneuse sans écran, réglages sans effet, place des photos entières, couleurs |
+| `test_viewer_logic`, `test_open_image`, `test_kind_features`, `test_placement`, `test_color_sources` | Visionneuse sans écran, réglages sans effet, place des photos entières, couleurs |
 | `test_gui_smoke`, `test_gui_flow` | Construction de toute l'interface et parcours complets (ignorés sans affichage) |
 | `test_installer` | Cohérence de l'installateur Inno Setup |
 

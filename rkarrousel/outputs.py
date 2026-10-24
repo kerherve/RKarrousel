@@ -124,7 +124,7 @@ def finalize_size(img: Image.Image, config: dict) -> Image.Image:
 
 def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> List[Tuple[str, Image.Image]]:
     """Rend toutes les sorties d'une photo en mémoire. `max_side` réduit la source (aperçus rapides)."""
-    img = open_image(path)
+    img = open_image(path, max_side)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     config = config_for_photo(config, path)
@@ -133,7 +133,7 @@ def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> 
 
 def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] = None) -> Optional[Image.Image]:
     """Rend une seule sortie (pleine résolution par défaut), ou None si ce type n'existe pas pour cette photo."""
-    img = open_image(path)
+    img = open_image(path, max_side)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     config = config_for_photo(config, path)

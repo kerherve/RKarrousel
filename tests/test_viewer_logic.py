@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, ROOT.as_posix())
 
 from rkarrousel.gui.viewer.carousel import SWIPE_FRACTION, SWIPE_MIN_FLICK, SWIPE_VELOCITY, swipe_decision
-from rkarrousel.gui.viewer.render_jobs import RenderJobs
+from rkarrousel.gui.viewer.loader import PreviewCache
+from rkarrousel.gui.viewer.render_jobs import PREVIEW_SIDE, RenderJobs
 from rkarrousel.gui.viewer.viewport import MAX_SCALE, MIN_SCALE, Viewport
 from tests.helpers import make_image
 
@@ -81,6 +82,43 @@ class SwipeDecisionTests(unittest.TestCase):
         self.assertEqual(swipe_decision(-slow, self.D, SWIPE_VELOCITY * 2, True, True), 0)
 
 
+try:
+    import tkinter as tk
+
+    tk.Tk().destroy()
+    HAVE_DISPLAY = True
+except Exception:  # pas d'écran (CI Linux) : ce test est ignoré
+    HAVE_DISPLAY = False
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "pas d'affichage graphique")
+class DebouncerTests(unittest.TestCase):
+    def test_only_the_last_trigger_fires_after_the_delay_and_cancel_stops_it(self):
+        from rkarrousel.gui.widgets import Debouncer
+
+        root = tk.Tk()
+        try:
+            calls = []
+            debounce = Debouncer(root, 40, lambda *args: calls.append(args))
+            for value in (1, 2, 3):  # trois demandes rapprochées : un seul appel, avec la dernière valeur
+                debounce.trigger(value)
+            self.assertTrue(debounce.pending)
+            end = time.time() + 2
+            while time.time() < end and not calls:
+                root.update()
+                time.sleep(0.01)
+            self.assertEqual(calls, [(3,)])
+            self.assertFalse(debounce.pending)
+            debounce.trigger(4)
+            debounce.cancel()
+            root.update()
+            time.sleep(0.1)
+            root.update()
+            self.assertEqual(calls, [(3,)])  # annulé : rien de plus
+        finally:
+            root.destroy()
+
+
 class RenderJobsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -101,8 +139,8 @@ class RenderJobsTests(unittest.TestCase):
         jobs.launch(self.a, "framed", {"frame_ratio": 0.03}, {1: (self.b, "framed")})
         got = self.collect(jobs, {"image", "neighbor"})
         self.assertEqual({k for k, _ in got}, {"image", "neighbor"})
-        delta, image = next(p for k, p in got if k == "neighbor")
-        self.assertEqual(delta, 1)
+        delta, image, source, kind = next(p for k, p in got if k == "neighbor")
+        self.assertEqual((delta, source, kind), (1, self.b, "framed"))
         self.assertIsNotNone(image)
 
     def test_results_of_a_replaced_request_are_dropped(self):
@@ -112,6 +150,34 @@ class RenderJobsTests(unittest.TestCase):
         jobs.launch(self.b, "framed", {"frame_ratio": 0.05}, {})
         got = self.collect(jobs, {"image"})
         self.assertEqual([k for k, _ in got], ["image"])  # une seule image : celle de la dernière demande
+
+    def test_the_main_image_is_an_ideal_preview_unless_the_full_resolution_is_asked(self):
+        big = make_image(self.dir, "big.jpg", (3600, 4800))
+        jobs = RenderJobs()
+        jobs.launch(big, "framed", {"frame_ratio": 0.03}, {})
+        [(_, (preview, full, _, _))] = [e for e in self.collect(jobs, {"image"}) if e[0] == "image"]
+        self.assertFalse(full)
+        self.assertLessEqual(max(preview.size), PREVIEW_SIDE * 1.1)  # aperçu : cadre compris, un peu plus que le côté demandé
+        jobs.launch(big, "framed", {"frame_ratio": 0.03}, {}, full=True)
+        [(_, (whole, full, _, _))] = [e for e in self.collect(jobs, {"image"}) if e[0] == "image"]
+        self.assertTrue(full)
+        self.assertGreater(whole.height, 4800)  # pleine résolution : la photo entière, encadrée
+
+    def test_the_cache_hands_back_a_preview_until_a_setting_changes(self):
+        cache = PreviewCache(size=2)
+        image = make_image(self.dir, "x.jpg", (100, 100))
+        from PIL import Image
+        preview = Image.new("RGB", (10, 10))
+        config = {"frame_ratio": 0.03}
+        self.assertIsNone(cache.get(image, "framed", config))
+        cache.put(image, "framed", config, preview)
+        self.assertIs(cache.get(image, "framed", config), preview)
+        self.assertIsNone(cache.get(image, "framed", {"frame_ratio": 0.05}))  # un réglage a changé : plus valable
+        self.assertIsNone(cache.get(image, "crop34", config))                  # autre type d'image
+        cache.put(image, "a", config, preview)
+        cache.put(image, "b", config, preview)  # trop plein : le plus ancien part
+        self.assertEqual(len(cache), 2)
+        self.assertIsNone(cache.get(image, "framed", config))
 
     def test_a_failing_render_reports_an_error(self):
         jobs = RenderJobs()

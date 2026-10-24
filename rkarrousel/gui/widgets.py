@@ -22,6 +22,37 @@ def bind_trace(widget: tk.Misc, variable: tk.Variable, callback: Callable[[], No
     widget.bind("<Destroy>", cleanup, add="+")
 
 
+class Debouncer:
+    """Rappelle `callback` une fois que plus rien n'a été demandé depuis `delay_ms` : on attend la fin d'une frappe ou d'un
+    geste avant de recalculer. Le rappel en attente est annulé si le widget est détruit."""
+
+    def __init__(self, widget: tk.Misc, delay_ms: int, callback: Callable[..., None]):
+        self.widget, self.delay_ms, self.callback = widget, delay_ms, callback
+        self._job = None
+        widget.bind("<Destroy>", lambda e: self.cancel() if e.widget is widget else None, add="+")
+
+    @property
+    def pending(self) -> bool:
+        return self._job is not None
+
+    def trigger(self, *args) -> None:
+        """(Re)lance l'attente ; `args` sont transmis au rappel."""
+        self.cancel()
+        self._job = self.widget.after(self.delay_ms, lambda: self._fire(args))
+
+    def cancel(self) -> None:
+        if self._job is not None:
+            try:
+                self.widget.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+
+    def _fire(self, args) -> None:
+        self._job = None
+        self.callback(*args)
+
+
 def make_scrollable(parent: tk.Misc, background: str) -> ttk.Frame:
     """Zone défilante (molette comprise) : un onglet peut grandir sans être coupé. Renvoie le cadre intérieur."""
     canvas = tk.Canvas(parent, highlightthickness=0, bg=background, borderwidth=0)

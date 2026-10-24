@@ -1,14 +1,22 @@
 """Ouverture, cadre et enregistrement des images."""
 
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image, ImageOps
 
 from rkarrousel.config import DEFAULT_BORDER_COLOR, DEFAULT_JPEG_QUALITY
 
 
-def open_image(path: Path) -> Image.Image:
+def open_image(path: Path, max_side: Optional[int] = None) -> Image.Image:
+    """Ouvre une photo, redressée selon l'orientation EXIF. Avec `max_side`, un JPEG est décodé directement à taille
+    réduite (1/2, 1/4 ou 1/8, jamais en dessous de `max_side`) : bien plus rapide qu'une lecture complète suivie d'une
+    réduction, pour les aperçus."""
     img = Image.open(path)
+    if max_side:
+        width, height = img.size
+        longest = max(width, height)  # on demande la taille voulue À LA FORME de la photo : le plus petit décodage suffisant
+        img.draft("RGB", (max(1, -(-max_side * width // longest)), max(1, -(-max_side * height // longest))))  # JPEG seulement
     img = ImageOps.exif_transpose(img)
     if img.mode not in {"RGB", "RGBA", "L"}:
         img = img.convert("RGB")

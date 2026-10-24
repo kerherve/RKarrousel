@@ -8,6 +8,7 @@ from PIL import ImageTk
 from rkarrousel.gui.order.grid_layout import GridLayout
 from rkarrousel.formats import INSTAGRAM_MAX_IMAGES
 from rkarrousel.gui.order.model import OrderModel, Tile
+from rkarrousel.gui.widgets import Debouncer
 from rkarrousel.i18n import kind_label, t
 
 DRAG_THRESHOLD = 6  # pixels de déplacement avant qu'un clic devienne un glisser
@@ -50,27 +51,12 @@ class GridCanvas(tk.Canvas):
         self.bind("<MouseWheel>", lambda e: self.yview_scroll(-1 if e.delta > 0 else 1, "units"))
         self.bind("<Button-4>", lambda e: self.yview_scroll(-2, "units"))
         self.bind("<Button-5>", lambda e: self.yview_scroll(2, "units"))
-        self._fit_job = None
-        self.bind("<Configure>", self._on_configure)
-        self.bind("<Destroy>", lambda e: self._cancel_fit() if e.widget is self else None, add="+")
+        self._fit = Debouncer(self, 120, self.fit_to_width)  # on attend la fin du geste : pas de redessin à chaque pixel
+        self.bind("<Configure>", lambda e: self._fit.trigger(e.width))
 
     # ------------------------------------------------------------------ taille de la fenêtre
-    def _cancel_fit(self) -> None:
-        if self._fit_job is not None:
-            try:
-                self.after_cancel(self._fit_job)
-            except tk.TclError:
-                pass
-            self._fit_job = None
-
-    def _on_configure(self, event) -> None:
-        """La fenêtre change de taille : la grille ajoute ou retire des colonnes (on attend la fin du geste pour ne pas
-        tout redessiner à chaque pixel)."""
-        self._cancel_fit()
-        self._fit_job = self.after(120, lambda: self.fit_to_width(event.width))
 
     def fit_to_width(self, width: int) -> None:
-        self._fit_job = None
         if self.layout.fit_width(width):
             self.redraw()
 
