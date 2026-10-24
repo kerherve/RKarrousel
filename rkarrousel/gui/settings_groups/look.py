@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, ttk
 
-from rkarrousel.config import COLOR_MODES, COLOR_SOURCES, SIGNATURE_POSITIONS
+from rkarrousel.config import COLOR_MODES, COLOR_SOURCES, SIGNATURE_POSITIONS, parse_color
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.widgets import ChoiceBox, ColorPicker, HintLabel, bind_trace, set_tree_enabled
 from rkarrousel.i18n import t
@@ -85,8 +85,12 @@ class FillGroup(ttk.LabelFrame):
         self.blur_spin = ttk.Spinbox(blur_row, from_=0.2, to=5.0, increment=0.1, textvariable=model.blur_strength, width=6)
         self.blur_spin.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
-        bind_trace(self, model.landscape_fill_mode, self.refresh_state)
-        bind_trace(self, model.background_color_mode, self.refresh_state)
+        self.same_color = tk.StringVar()  # avertissement : fond et cadre de la même couleur se confondent
+        ttk.Label(self, textvariable=self.same_color, foreground="#f0a030", justify=tk.LEFT, wraplength=int(380 * ctx.theme.scale)).grid(
+            row=5, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
+        for variable in (model.landscape_fill_mode, model.background_color_mode, model.background_color,
+                         model.border_color, model.border_color_mode, model.no_frame):
+            bind_trace(self, variable, self.refresh_state)
         self.refresh_state()
 
     def set_applicable(self, applicable: bool) -> None:
@@ -107,6 +111,16 @@ class FillGroup(ttk.LabelFrame):
         self.background.set_enabled(solid and not from_photo)
         self.source.state(["!disabled"] if solid and from_photo else ["disabled"])
         self.blur_spin.state(["disabled"] if solid else ["!disabled"])
+        self.same_color.set(t("fill_same_as_frame") if self._same_as_frame(solid) else "")
+
+    def _same_as_frame(self, solid: bool) -> bool:
+        """Fond uni et cadre de la même couleur (tous deux fixes) : on ne voit plus où le cadre s'arrête."""
+        model = self.model
+        if not solid or model.no_frame.get():
+            return False
+        if model.background_color_mode.get() != "fixed" or model.border_color_mode.get() != "fixed":
+            return False
+        return parse_color(model.background_color.get(), (0, 0, 0)) == parse_color(model.border_color.get(), (255, 255, 255))
 
 
 class SignatureGroup(ttk.LabelFrame):

@@ -207,6 +207,10 @@ class GuiFlowTests(unittest.TestCase):
         window.adjust_selected()
         return self.app.flow.pages["adjust"].viewer
 
+    def show_viewer_on(self, window, index):
+        window.select(index)
+        return self.show_viewer(window)
+
     def leave_viewer(self):
         if self.app.flow.index == 2:
             self.app.flow.go(1)
@@ -455,6 +459,43 @@ class GuiFlowTests(unittest.TestCase):
         self.assertIsNotNone(viewer.image)
         self.pump(lambda: not viewer.placeholder)  # …puis la pleine résolution le remplace
         self.leave_viewer()
+
+    def test_choosing_a_background_colour_changes_the_bands_and_never_the_frame(self):
+        from rkarrousel.gui import widgets
+
+        self.app.model.landscape_fill_mode.set("black")
+        window = self.open_order_window(self.photos[1:2])
+        kinds = [tile.kind for tile in window.tiles]
+        viewer = self.show_viewer_on(window, kinds.index("part1_with_sig"))
+        self.pump(lambda: viewer.image is not None)
+        picker = viewer.panel.fill_group.background
+
+        def pixels():
+            image = viewer.image
+            return image.getpixel((image.width // 2, image.height // 10)), image.getpixel((1, 1))
+
+        self.assertEqual(pixels(), ((0, 0, 0), (255, 255, 255)))  # bande noire, cadre blanc
+        before = viewer.loader.jobs.generation
+        with mock.patch.object(widgets.colorchooser, "askcolor", return_value=((255, 0, 0), "#ff0000")):
+            picker.choose()
+        self.assertEqual(self.app.model.background_color.get(), "#FF0000")
+        self.assertEqual(self.app.model.border_color.get(), "#FFFFFF")  # le cadre n'a pas bougé
+        self.pump(lambda: viewer.loader.jobs.generation > before and pixels()[0] == (255, 0, 0))
+        self.assertEqual(pixels()[1], (255, 255, 255))
+
+    def test_same_colour_for_background_and_frame_is_pointed_out(self):
+        group = self.settings_tab.fill
+        self.app.model.landscape_fill_mode.set("black")
+        self.app.model.background_color.set("#FFFFFF")  # cadre blanc par défaut
+        self.assertIn("même couleur", group.same_color.get())
+        self.app.model.background_color.set("#FF0000")
+        self.assertEqual(group.same_color.get(), "")
+        self.app.model.background_color.set("#ffffff")
+        self.app.model.no_frame.set(True)  # sans cadre : rien à confondre
+        self.assertEqual(group.same_color.get(), "")
+        self.app.model.no_frame.set(False)
+        self.app.model.landscape_fill_mode.set("blur")  # fond flouté : la couleur du fond uni ne compte pas
+        self.assertEqual(group.same_color.get(), "")
 
     def test_viewer_rerenders_when_the_colour_source_changes(self):
 
