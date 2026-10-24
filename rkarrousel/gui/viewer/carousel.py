@@ -16,7 +16,7 @@ SWIPE_VELOCITY = 700    # ou vitesse (pixels par seconde) d'un coup de pouce rap
 RESISTANCE = 0.25       # en bout de carrousel, l'image ne suit le doigt que d'un quart
 CAROUSEL_GAP = 0.02     # écart entre deux images, en fraction de la largeur
 MAX_NEIGHBOR_DISPLAY = 2600  # au-delà (zoom fort), on ne dessine plus les voisines
-PHOTO_CACHE = 6             # voisines déjà redimensionnées, gardées en mémoire
+PHOTO_CACHE = 80            # voisines déjà redimensionnées, gardées en mémoire (petites quand on dézoome : peu de place)
 
 
 def swipe_decision(slide_px: float, distance: float, velocity: float, can_prev: bool, can_next: bool) -> int:

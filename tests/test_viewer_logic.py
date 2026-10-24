@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, ROOT.as_posix())
@@ -117,6 +118,86 @@ class DebouncerTests(unittest.TestCase):
             self.assertEqual(calls, [(3,)])  # annulé : rien de plus
         finally:
             root.destroy()
+
+
+class FakeWidget:
+    """Un widget sans écran : `after` range le rappel, que les tests n'exécutent pas."""
+
+    def after(self, ms, callback=None):
+        return "job"
+
+    def after_cancel(self, job):
+        pass
+
+
+class FakeNavigator:
+    """Une grille de n images (tuiles 0…n-1) dont la sélection se déplace."""
+
+    def __init__(self, count):
+        from types import SimpleNamespace
+
+        self.tiles = [SimpleNamespace(source=Path(f"/photos/{i}.jpg"), kind="framed") for i in range(count)]
+        self.selected = 0
+
+    def viewer_peek(self, delta):
+        index = self.selected + delta
+        return self.tiles[index] if 0 <= index < len(self.tiles) else None
+
+    def viewer_preview(self, tile, config):
+        return None
+
+
+class LoaderArrivalTests(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+
+        from rkarrousel.gui.viewer.loader import ImageLoader
+
+        self.navigator = FakeNavigator(8)
+        self.carousel = SimpleNamespace(neighbors={}, set_neighbor=lambda delta, image: self.carousel.neighbors.__setitem__(delta, image))
+        self.loader = ImageLoader(FakeWidget(), self.navigator, self.carousel, lambda *a: None, lambda *a: None, lambda: None)
+        self.loader.jobs.close()  # aucun vrai calcul : on fournit nous-mêmes les résultats
+        self.loader.jobs.launch = lambda *args, **kwargs: 1
+        self.loader.jobs.prefetch = lambda *args, **kwargs: None
+        self.config = {"frame_ratio": 0.03}
+
+    def launch(self, reach):
+        self.loader.launch(self.navigator.tiles[self.navigator.selected].source, "framed", self.config, False, False, reach=reach)
+
+    def test_a_result_requested_from_another_position_still_shows_where_the_image_is_now(self):
+        from PIL import Image
+
+        self.navigator.selected = 3
+        self.launch(reach=1)
+        tile4 = self.navigator.tiles[4]  # demandée comme voisine +1…
+        self.navigator.selected = 2  # … puis on bouge : elle est maintenant à +2
+        self.launch(reach=2)
+        self.assertIsNone(self.carousel.neighbors.get(2))
+        arrived = Image.new("RGB", (50, 70))
+        self.loader._neighbor_arrived(1, arrived, tile4.source, "framed")  # le résultat porte l'ancienne position (+1)
+        self.assertIs(self.carousel.neighbors[2], arrived)  # il s'affiche quand même à la bonne place (+2)
+
+    def test_a_result_for_an_image_no_longer_in_view_goes_to_the_cache_only(self):
+        from PIL import Image
+
+        self.navigator.selected = 0
+        self.launch(reach=1)
+        far = self.navigator.tiles[6]
+        arrived = Image.new("RGB", (50, 70))
+        self.loader._neighbor_arrived(1, arrived, far.source, "framed")
+        self.assertNotIn(arrived, self.carousel.neighbors.values())
+        self.assertIs(self.loader.cache.get(far.source, "framed", self.loader._config), arrived)  # mais il est gardé
+
+    def test_far_neighbours_get_a_small_preview_in_the_background_not_a_sharp_job(self):
+        self.navigator.selected = 0
+        queued = []
+        with mock.patch.object(self.loader.jobs, "launch", side_effect=lambda *a, **k: queued.append((a, k)) or 1), \
+                mock.patch.object(self.loader.jobs, "prefetch") as prefetch:
+            self.launch(reach=6)
+        sharp = set(queued[0][0][3]) if queued else set()
+        self.assertTrue(sharp <= {1, 2, 3})  # des aperçus nets seulement tout près du centre (+ la suivante)
+        background = prefetch.call_args[0][1]
+        self.assertGreaterEqual(len(background), 3)  # les plus lointaines sont préparées en petit, en arrière-plan
 
 
 class RenderJobsTests(unittest.TestCase):

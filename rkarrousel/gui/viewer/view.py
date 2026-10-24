@@ -26,7 +26,7 @@ from rkarrousel.i18n import kind_label, t
 from rkarrousel.outputs import kind_features
 from rkarrousel.pipeline import peek_size
 
-MAX_REACH = 6           # voisines affichées de chaque côté, au plus
+MAX_REACH = 60          # voisines affichées de chaque côté, au plus (la fenêtre et le nombre d'images limitent bien avant)
 PREVIEW_DELAY_MS = 100   # en feuilletant, l'aperçu net n'est calculé qu'une fois qu'on s'arrête
 RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image
 
@@ -138,14 +138,17 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors, full, self._reach)
 
     def _neighbors_in_view(self) -> int:
-        """Combien d'images de chaque côté entrent dans la fenêtre : on en affiche autant (au moins une, au plus MAX_REACH)."""
+        """Combien d'images de chaque côté entrent dans la fenêtre (selon le zoom et la position de l'image) : on en charge
+        autant, au moins une."""
         if self.navigator is None or self.image is None:
             return 1
-        step = self.image.width * (1 + CAROUSEL_GAP) * self.view.zoom  # largeur d'une image à l'écran, écart compris
+        width = self.image.width * self.view.zoom  # largeur de l'image affichée, à l'écran
+        step = width + self.image.width * CAROUSEL_GAP * self.view.zoom  # d'une image à la suivante
         if step <= 0:
             return 1
-        side = (self._view_size()[0] - self.image.width * self.view.zoom) / 2  # place libre de chaque côté
-        return max(1, min(MAX_REACH, math.ceil(side / step)))
+        left = -self.view.ox * self.view.zoom + self.carousel.slide_px  # bord gauche de l'image affichée
+        free_left, free_right = left, self._view_size()[0] - (left + width)  # place libre de chaque côté
+        return max(1, min(MAX_REACH, math.ceil(max(free_left, free_right, 0) / step)))
 
     def _ensure_reach(self) -> None:
         """La fenêtre a changé de taille (ou l'image vient d'arriver) : on charge plus de voisines si elles tiennent."""
@@ -241,6 +244,7 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         if self.image is not None and self.view.zoom_to(zoom * self.resolution.factor, self._view_size()):
             self.redraw()
             self._check_full()
+            self._ensure_reach()
 
     def zoom_by(self, factor: float) -> None:
         vw, vh = self._view_size()
@@ -250,6 +254,7 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         if self.image is not None and self.view.zoom_at(cx, cy, factor):
             self.redraw()
             self._check_full()
+            self._ensure_reach()  # dézoomer fait tenir plus d'images dans la fenêtre : on les charge
 
     def _on_resize(self) -> None:
         self.carousel.draw_arrows(self._view_size())

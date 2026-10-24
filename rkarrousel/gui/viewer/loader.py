@@ -14,7 +14,13 @@ from rkarrousel.gui.viewer.preview_cache import PREVIEW, STRIP, PreviewCache
 from rkarrousel.gui.viewer.render_jobs import RenderJobs
 
 POLL_MS = 80
+
+
+def _rgb(image: Image.Image) -> Image.Image:
+    """L'image en RGB, sans la copier si elle l'est déjà."""
+    return image if image.mode == "RGB" else image.convert("RGB")
 MAX_PREFETCH_DISTANCE = 400  # on ne cherche pas plus loin que ça dans la grille
+SHARP_DISTANCE = 2           # jusqu'à cette distance du centre, les voisines ont un aperçu net ; au-delà, un petit aperçu
 
 
 class ImageLoader:
@@ -45,7 +51,7 @@ class ImageLoader:
         if self.navigator is None:
             return None
         image = self.navigator.viewer_preview(tile, config)
-        return image.convert("RGB") if image is not None else None
+        return _rgb(image) if image is not None else None
 
     def preview(self, tile, config: dict) -> Optional[Image.Image]:
         """Le meilleur aperçu immédiatement disponible pour `tile` : celui du cache, sinon celui de la grille."""
@@ -99,12 +105,15 @@ class ImageLoader:
                         stand_in = self.grid_preview(tile, config)
                         if stand_in is not None:
                             self.carousel.set_neighbor(delta, stand_in)  # flou, mais tout de suite
-                    if self.cache.get(tile.source, tile.kind, config, PREVIEW) is None:
+                    if distance > SHARP_DISTANCE:  # loin du centre : le petit aperçu suffit (il est préparé en arrière-plan)
+                        if self.cache.get(tile.source, tile.kind, config) is None:
+                            background.append((tile.source, tile.kind))
+                    elif self.cache.get(tile.source, tile.kind, config, PREVIEW) is None:
                         key = PreviewCache.key(tile.source, tile.kind, config)
                         if key not in self._inflight:  # l'aperçu net arrive ensuite (sauf s'il est déjà en route)
                             self._inflight.add(key)
                             peeks[delta] = (tile.source, tile.kind)
-                elif distance == reach + 1 and self.cache.get(tile.source, tile.kind, config, PREVIEW) is None:
+                elif distance == reach + 1 and distance <= SHARP_DISTANCE and self.cache.get(tile.source, tile.kind, config, PREVIEW) is None:
                     key = PreviewCache.key(tile.source, tile.kind, config)  # la prochaine à entrer dans la vue : aperçu net d'avance
                     if key not in self._inflight:
                         self._inflight.add(key)
@@ -138,7 +147,7 @@ class ImageLoader:
                 self._strip_arrived(*payload)
             elif kind == "image" and payload is not None:
                 image, full, source, image_kind = payload
-                image = image.convert("RGB")
+                image = _rgb(image)
                 if not full:
                     self.cache.put(source, image_kind, self._config, image, PREVIEW)
                 self.on_image(image, full)
@@ -151,16 +160,22 @@ class ImageLoader:
     def _neighbor_arrived(self, delta: int, image: Optional[Image.Image], source: Path, kind: str) -> None:
         self._inflight.discard(PreviewCache.key(source, kind, self._config))
         if image is not None:
-            image = image.convert("RGB")
+            image = _rgb(image)
             self.cache.put(source, kind, self._config, image, PREVIEW)  # utile même si l'on a déjà changé d'image
-        if self._expected.get(delta) == (source, kind):
-            self.carousel.set_neighbor(delta, image)
-            self.on_neighbor()
+        self._show_where_expected(source, kind, image)
+
+    def _show_where_expected(self, source: Path, kind: str, image: Optional[Image.Image]) -> None:
+        """Montre `image` à la place (ou aux places) qu'occupe aujourd'hui cette image dans le carrousel : on a pu changer
+        d'image depuis la demande, donc sa position n'est plus celle d'alors."""
+        for delta, target in self._expected.items():
+            if target == (source, kind):
+                self.carousel.set_neighbor(delta, image)
+                self.on_neighbor()
 
     def _strip_arrived(self, image: Image.Image, source: Path, kind: str) -> None:
         """Un petit aperçu préparé d'avance : il va au cache ; s'il correspond à une voisine déjà affichable mais encore
         vide, il s'affiche tout de suite."""
-        self.cache.put(source, kind, self._config, image.convert("RGB"), STRIP)
+        self.cache.put(source, kind, self._config, _rgb(image), STRIP)
         for delta, target in self._expected.items():
             if target == (source, kind) and self.carousel.neighbors.get(delta) is None:
                 self.carousel.set_neighbor(delta, self.cache.get(source, kind, self._config))

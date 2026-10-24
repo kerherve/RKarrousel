@@ -551,6 +551,18 @@ class GuiFlowTests(unittest.TestCase):
         viewer.carousel.redraw(viewer.image, viewer.view, (4000, 800))
         self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 6)  # toutes dessinées, de part et d'autre
 
+    def test_zooming_out_brings_in_more_photos_with_no_fixed_limit(self):
+        photos = [make_image(self.dir, f"z{i}.jpg", (1500, 1000)) for i in range(4)]  # 16 images
+        window = self.open_order_window(photos)
+        viewer = self.show_viewer_on(window, 8)  # au milieu : des images de chaque côté
+        self.pump(lambda: viewer.image is not None)
+        start = viewer._reach
+        for _ in range(10):  # on dézoome : l'image devient toute petite, la fenêtre peut en montrer beaucoup
+            viewer.zoom_by(0.7)
+        self.assertGreater(viewer._reach, max(start, 6))  # bien plus que les six d'avant
+        self.pump(lambda: all(viewer.carousel.neighbors.get(d) is not None
+                              for d in range(-min(viewer._reach, 8), min(viewer._reach, 7) + 1) if d != 0), seconds=60)
+
     def test_a_neighbour_arriving_redraws_only_the_neighbours(self):
         window = self.open_order_window(self.photos[:2])
         viewer = self.show_viewer_on(window, 1)
