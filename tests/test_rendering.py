@@ -266,6 +266,14 @@ class AnyFormatTests(unittest.TestCase):
             ["part1_with_sig", "part1", "part2", "part3", "part2_with_sig", "crop34"],
         )
 
+    def test_the_limit_is_instagrams_20_images(self):
+        self.assertEqual(formats.INSTAGRAM_MAX_IMAGES, 20)
+        self.assertEqual(formats.MAX_PANORAMA_PARTS, 20)
+        self.assertEqual(formats.panorama_parts(15000, 1000), 20)  # exactement 20 tranches : accepté
+        with self.assertRaises(ValueError) as caught:
+            formats.panorama_parts(15500, 1000)  # 21 tranches : refusé, et le message donne la bonne limite
+        self.assertIn("20", str(caught.exception))
+
     def test_disabled_kinds_apply_to_panorama_parts(self):
         config = {"disabled_kinds": ["part2", "crop34"]}  # part2 règle toutes les tranches après la première
         self.assertEqual(produce.kinds_for_size(1600, 900, config), ["part1_with_sig", "part1", "part2_with_sig"])
