@@ -19,6 +19,33 @@ class Viewport:
         self.ox = 0.0
         self.oy = 0.0
         self.fit_mode = True
+        self._fit_zoom = 1.0  # zoom qui ajusterait l'image entière à la fenêtre (à jour tant que l'image et la fenêtre ne changent pas)
+
+    @property
+    def ratio(self) -> float:
+        """Le zoom actuel par rapport à l'ajustement à la fenêtre : 1 = ajusté, moins de 1 = dézoomé (on voit plus que l'image),
+        plus de 1 = zoomé (l'image dépasse de la fenêtre)."""
+        return self.zoom / self._fit_zoom if self._fit_zoom else 1.0
+
+    @property
+    def zoomed_in(self) -> bool:
+        return self.ratio > 1.001
+
+    def set_geometry(self, image_size: Size, view_size: Size) -> None:
+        """L'image ou la fenêtre a changé de taille : on remet à jour ce qu'est « ajusté » (sans toucher au zoom choisi)."""
+        iw, ih = image_size
+        vw, vh = view_size
+        self._fit_zoom = min(MAX_SCALE, max(MIN_SCALE, min(vw / iw, vh / ih)))
+
+    def apply_ratio(self, image_size: Size, view_size: Size, ratio: float) -> None:
+        """Place l'image centrée, au zoom `ratio` par rapport à l'ajustement : un zoom choisi se garde d'une image à l'autre."""
+        self.set_geometry(image_size, view_size)
+        iw, ih = image_size
+        vw, vh = view_size
+        self.zoom = min(MAX_SCALE, max(MIN_SCALE, self._fit_zoom * ratio))
+        self.fit_mode = abs(ratio - 1.0) < 1e-3
+        self.ox = iw / 2 - vw / (2 * self.zoom)
+        self.oy = ih / 2 - vh / (2 * self.zoom)
 
     def fit(self, image_size: Size, view_size: Size) -> None:
         """Ajuste l'image entière à la fenêtre, centrée."""
@@ -26,6 +53,7 @@ class Viewport:
         vw, vh = view_size
         self.fit_mode = True
         self.zoom = min(MAX_SCALE, max(MIN_SCALE, min(vw / iw, vh / ih)))
+        self._fit_zoom = self.zoom
         self.ox = iw / 2 - vw / (2 * self.zoom)
         self.oy = ih / 2 - vh / (2 * self.zoom)
 

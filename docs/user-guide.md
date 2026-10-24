@@ -77,7 +77,8 @@ The grid shows the final rendering of every image, like an Instagram profile. Th
 
 The selected image is shown in full resolution, with its neighbours on either side, like when you swipe through an Instagram post.
 
-- Wheel: zoom; drag: move the zoomed image; "Fit" and "100%" to go back.
+- Wheel or "-" / "+": zoom; "Fit" brings back the whole image, "100%" the full resolution. The zoom you chose stays the same when you move to another image: zoomed out, you keep your film strip of photos from one image to the next.
+- Drag: when the whole image is visible (fitted or zoomed out) it scrolls through the images; once you have zoomed in on it, it moves the image.
 - Round arrows on the edges (or the ← → keys): previous or next image of the grid. Excluded images are skipped; the position (3 / 12) is shown at the top.
 - Dragging the image with the mouse slides it: released far enough (or with a quick flick), the neighbouring image slides in; otherwise it springs back.
 - Browsing is fast: the image is shown as a sharp preview (1800 px, plenty for the screen), every other image of the carousel is prepared in the background, nearest first (no limit on the number of images: only memory caps it, at 450 MB), so each step is instant. There is no limit on what you see: the window shows as many images as it can hold, and zooming out (the "-" button or the wheel) shows dozens at once, like a film strip. Full resolution is only loaded if you zoom beyond the preview (or "100%"); the ruler and the announced dimensions are always in real pixels.

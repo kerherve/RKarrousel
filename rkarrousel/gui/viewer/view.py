@@ -63,6 +63,7 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         self.settings_changed = False
         self._closing = False
         self._reach = 1  # voisines affichées de chaque côté (selon la largeur de la fenêtre)
+        self._kept_ratio = None  # zoom relatif de l'image précédente, à appliquer à la nouvelle quand elle arrive
         self._rerender = Debouncer(self, RERENDER_DELAY_MS, self._recalculate)  # attend la fin d'un geste sur les réglages
         self._main_delay = Debouncer(self, PREVIEW_DELAY_MS, self._launch_main)  # attend qu'on cesse de feuilleter
         self.loader: Optional[ImageLoader] = None
@@ -171,11 +172,12 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         previous = self.resolution.update(image, full, self.source, self.config_snapshot)
         if full:
             Resolution.rescale_view(self.view, previous)
+            self.view.set_geometry(image.size, self._view_size())  # pleine résolution : l'image est plus grande
         self._describe()
         if self.placeholder:
             self.placeholder = False
             if not unchanged:
-                self.fit()  # même taille d'affichage que l'aperçu provisoire : la netteté arrive sans saut
+                self._place_image()  # même taille d'affichage que l'aperçu provisoire : la netteté arrive sans saut
         elif self.loaded_once:
             if full and self.view.fit_mode:
                 self.fit()
@@ -183,7 +185,7 @@ class ViewerView(BrowsingMixin, ttk.Frame):
                 self.redraw()  # on garde le zoom et la position pendant qu'on règle
         else:
             self.loaded_once = True
-            self.fit()
+            self._place_image()
         self._check_full()
 
     def _check_full(self) -> None:
@@ -239,6 +241,20 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         self.redraw()
         self._ensure_reach()
 
+    def _place_image(self) -> None:
+        """Met l'image affichée dans la vue : ajustée à la fenêtre, ou au zoom choisi pour l'image précédente (dézoomé, on
+        garde la même rangée de photos en passant à la suivante)."""
+        if self.image is None:
+            return
+        ratio = self._kept_ratio if self._kept_ratio is not None else self.view.ratio
+        self._kept_ratio = None
+        if abs(ratio - 1.0) < 1e-3:
+            self.fit()
+            return
+        self.view.apply_ratio(self.image.size, self._view_size(), ratio)
+        self.redraw()
+        self._ensure_reach()
+
     def set_zoom(self, zoom: float) -> None:
         """Zoom en pixels réels (1 = 100 %) : sur un aperçu, c'est un zoom plus fort, donc la pleine résolution est chargée."""
         if self.image is not None and self.view.zoom_to(zoom * self.resolution.factor, self._view_size()):
@@ -260,16 +276,18 @@ class ViewerView(BrowsingMixin, ttk.Frame):
         self.carousel.draw_arrows(self._view_size())
         if self.image is None:
             return
-        if self.view.fit_mode:
-            self.fit()
-        else:
+        if self.view.zoomed_in:
+            self.view.set_geometry(self.image.size, self._view_size())
             self.redraw()
+        else:
+            self._place_image()  # ajusté ou dézoomé : on garde le même zoom relatif et on recentre
+            self._ensure_reach()
 
     def _press(self, event) -> None:
         if "nav" in self.canvas.gettags("current") or self.carousel.animating:
             return  # clic sur une flèche de navigation, ou animation en cours
-        if self.navigator is not None and self.view.fit_mode:
-            self.carousel.begin_swipe(event.x)  # image entière à l'écran : on fait défiler le carrousel
+        if self.navigator is not None and not self.view.zoomed_in:
+            self.carousel.begin_swipe(event.x)  # image entière à l'écran (ajustée ou dézoomée) : on fait défiler le carrousel
             return
         self.pan = (event.x, event.y, self.view.ox, self.view.oy)  # zoomée : le glisser déplace l'image
 

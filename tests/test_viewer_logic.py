@@ -56,6 +56,30 @@ class ViewportTests(unittest.TestCase):
         self.assertIsNone(view.visible_box((100, 100), (300, 300)))
 
 
+class ViewportRatioTests(unittest.TestCase):
+    def test_ratio_is_the_zoom_relative_to_fit_and_survives_an_image_change(self):
+        view = Viewport()
+        view.fit((1000, 2000), (500, 500))
+        self.assertAlmostEqual(view.ratio, 1.0)
+        self.assertFalse(view.zoomed_in)
+        view.zoom_at(250, 250, 0.5)  # on dézoome : l'image devient plus petite que la fenêtre
+        self.assertAlmostEqual(view.ratio, 0.5)
+        self.assertFalse(view.zoomed_in)
+        kept = view.ratio
+        view.apply_ratio((3000, 2000), (500, 500), kept)  # image suivante, d'une autre forme : même zoom relatif
+        self.assertAlmostEqual(view.ratio, 0.5)
+        self.assertAlmostEqual(view.zoom, 0.5 * (500 / 3000))
+        self.assertEqual(view.visible_box((3000, 2000), (500, 500)), (0, 0, 3000, 2000))  # centrée, entièrement visible
+        view.zoom_at(250, 250, 4.0)
+        self.assertTrue(view.zoomed_in)  # zoomé : le glisser doit déplacer l'image
+
+    def test_applying_the_fit_ratio_is_the_fit(self):
+        view = Viewport()
+        view.apply_ratio((1000, 2000), (500, 500), 1.0)
+        self.assertTrue(view.fit_mode)
+        self.assertAlmostEqual(view.zoom, 0.25)
+
+
 class SwipeDecisionTests(unittest.TestCase):
     D = 500.0
 

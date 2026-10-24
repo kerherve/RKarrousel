@@ -563,6 +563,45 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: all(viewer.carousel.neighbors.get(d) is not None
                               for d in range(-min(viewer._reach, 8), min(viewer._reach, 7) + 1) if d != 0), seconds=60)
 
+    def test_the_chosen_zoom_is_kept_when_moving_to_another_image(self):
+        photos = [make_image(self.dir, f"k{i}.jpg", (1500, 1000)) for i in range(4)]  # 16 images
+        window = self.open_order_window(photos)
+        viewer = self.show_viewer_on(window, 8)
+        self.pump(lambda: viewer.image is not None)
+        for _ in range(6):
+            viewer.zoom_by(0.7)  # on dézoome pour voir un ruban de photos
+        ratio, reach = viewer.view.ratio, viewer._reach
+        self.assertLess(ratio, 0.3)
+        self.assertGreater(reach, 3)
+        viewer.step(1)  # image suivante : le dézoom ne revient PAS à « ajusté »
+        self.pump(lambda: window.model.selected == 9 and not viewer.carousel.animating and viewer.image is not None)
+        self.assertAlmostEqual(viewer.view.ratio, ratio, places=2)
+        self.assertGreaterEqual(viewer._reach, reach - 1)
+        self.pump(lambda: viewer.carousel.neighbors.get(-3) is not None and viewer.carousel.neighbors.get(3) is not None)
+        viewer.fit()  # le bouton « Ajuster » remet l'image entière
+        self.assertAlmostEqual(viewer.view.ratio, 1.0)
+
+    def test_the_swipe_works_when_zoomed_out_and_the_drag_pans_when_zoomed_in(self):
+        photos = [make_image(self.dir, f"w{i}.jpg", (1500, 1000)) for i in range(3)]
+        window = self.open_order_window(photos)
+        viewer = self.show_viewer_on(window, 5)
+        self.pump(lambda: viewer.image is not None)
+        for _ in range(3):
+            viewer.zoom_by(0.7)
+        self.assertFalse(viewer.view.zoomed_in)
+        self.swipe(viewer, -int(viewer._slide_distance() * 0.6))  # dézoomé : on fait défiler d'une image
+        self.pump(lambda: window.model.selected == 6 and not viewer.carousel.animating)
+        viewer.set_zoom(1.0)  # zoomé : le glisser déplace l'image
+        self.assertTrue(viewer.view.zoomed_in)
+        before, selected = viewer.view.ox, window.model.selected
+        self.swipe(viewer, -200)
+        self.root.update()
+        self.assertEqual(window.model.selected, selected)
+        self.assertNotEqual(viewer.view.ox, before)
+        viewer.step(1)  # zoomé aussi, on peut passer à l'image suivante en gardant le zoom
+        self.pump(lambda: window.model.selected == selected + 1 and viewer.image is not None)
+        self.assertTrue(viewer.view.zoomed_in)
+
     def test_a_neighbour_arriving_redraws_only_the_neighbours(self):
         window = self.open_order_window(self.photos[:2])
         viewer = self.show_viewer_on(window, 1)

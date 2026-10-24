@@ -59,7 +59,8 @@ GUIDE = [
     ("adjust", "Étape 3 : Ajustements", [
         ("p", "L'image sélectionnée s'affiche en pleine résolution, avec ses voisines de part et d'autre, comme quand on fait défiler un post Instagram."),
         ("bullets", [
-            "Molette : zoom ; glisser : déplacer l'image zoomée ; « Ajuster » et « 100 % » pour revenir.",
+            "Molette ou « − » / « + » : zoom ; « Ajuster » remet l'image entière, « 100 % » la pleine résolution. Le zoom choisi reste le même quand vous passez à une autre image : dézoomé, vous gardez votre ruban de photos d'une image à l'autre.",
+            "Glisser : quand l'image entière est visible (ajustée ou dézoomée), cela fait défiler les images ; quand vous avez zoomé dessus, cela déplace l'image.",
             "Flèches rondes sur les bords (ou touches ← →) : image précédente ou suivante de la grille. Les images exclues sont sautées ; le rang (3 / 12) est en haut.",
             "Glisser l'image à la souris la fait défiler : lâchée assez loin (ou d'un coup de pouce rapide), l'image voisine arrive en glissant ; sinon elle revient en place.",
             "Feuilleter est rapide : l'image s'affiche en aperçu net (1800 px, largement assez pour l'écran), toutes les autres images du carrousel sont préparées en arrière-plan, les plus proches d'abord (sans limite de nombre : seule la mémoire plafonne, à 450 Mo), donc chaque pas est instantané. Il n'y a pas de limite à ce qu'on voit : la fenêtre montre autant d'images qu'elle peut en contenir, et en dézoomant (bouton « − » ou molette) on en voit des dizaines à la fois, comme un ruban de pellicule. La pleine résolution n'est chargée que si vous zoomez au-delà de l'aperçu (ou « 100 % ») ; la règle et les dimensions annoncées sont toujours en pixels réels.",

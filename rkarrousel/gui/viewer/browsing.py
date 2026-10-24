@@ -63,7 +63,7 @@ class BrowsingMixin:
         """Image suivante (+1) ou précédente (-1) : en carrousel, elle arrive en glissant."""
         if self.carousel.animating or not self.carousel.can_step(delta):
             return
-        if (self.carousel.enabled.get() and self.view.fit_mode and self.image is not None
+        if (self.carousel.enabled.get() and not self.view.zoomed_in and self.image is not None
                 and self.carousel.neighbors.get(delta) is not None):
             self.carousel.step(delta)
             return
@@ -97,18 +97,18 @@ class BrowsingMixin:
         self.image = self.photo = None
         self.loaded_once = False
         self.pan = None
-        self.view.fit_mode = True
         self.carousel.reset(behind)
         self.ruler.clear()
         self.canvas.delete("img", "neigh")
         self.measure.set(t("viewer_hint"))
         self.info.set(t("viewer_loading"))
         self.resolution.reset()
+        self._kept_ratio = self.view.ratio  # le zoom choisi (dézoomé, ajusté, zoomé) est gardé pour la nouvelle image
         self.placeholder = placeholder is not None
         if placeholder is not None:
             self.image = placeholder
             self.loaded_once = True
-            self.fit()
+            self._place_image()
         if self.ctx is not None:
             self.config_snapshot = dict(self.ctx.collect_config())
         if self.panel is not None:
