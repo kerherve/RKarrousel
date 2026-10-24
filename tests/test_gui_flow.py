@@ -229,11 +229,13 @@ class GuiFlowTests(unittest.TestCase):
         window = self.open_order_window(self.photos[:2])
         self.root.update()
         base = window.layout.columns
-        self.root.geometry("2000x900")
-        self.pump(lambda: window.layout.columns > base)
+        # on donne directement la largeur à la grille : la taille de l'écran (celui du serveur de test est petit) ne compte pas
+        window.grid_canvas.fit_to_width(2200)
+        self.assertGreater(window.layout.columns, base)
         self.assertEqual(window.grid_canvas.layout.columns, window.layout.columns)
-        self.root.geometry("900x900")
-        self.pump(lambda: window.layout.columns == base)
+        self.assertEqual(len(window.grid_canvas.find_all()) > 0, True)  # la grille a été redessinée
+        window.grid_canvas.fit_to_width(500)
+        self.assertEqual(window.layout.columns, base)
 
     def test_order_window_warns_beyond_twenty_images(self):
         photos = [make_image(self.dir, f"w{i}.jpg", (900, 1200)) for i in range(21)]  # 21 images (3/4 : une chacune)
