@@ -4,6 +4,28 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.12.0
+
+### English
+
+- "View large" now has a settings panel: frame, colours, background and signature are adjusted live, without going back to the Settings tab. Settings the displayed image does not use are greyed out.
+- Per-photo frame colour, with the resulting colour shown and a light fine-tune of hue, saturation and lightness (double-click a slider to reset it).
+- New colours taken from the photo: complementary and contrasting. You can choose where the reference colour comes from: dominant colour, edges or average.
+- Carousel preview: neighbouring images appear on either side, like an Instagram post. Swipe with the mouse, or use the arrows or the keys. Browsing is fast, and the Crop button is available on crop images.
+- With a solid background, the frame now surrounds the whole image, as with a blurred background. This changes the look of images that use a solid (black or white) background.
+- For landscapes, the whole photo now comes before the split by default. The two whole-photo images (upright and rotated) can be placed before or after the split, at the end of the carousel, or removed.
+- The order grid adds columns when you enlarge the window, and warns beyond Instagram's 20-image limit (numbers turn red). Panoramas can now be cut into up to 20 slices.
+
+### Français
+
+- « Voir en grand » a maintenant un panneau de réglages : cadre, couleurs, fond et signature se règlent en direct, sans retourner dans l'onglet Réglages. Les réglages que l'image affichée n'utilise pas sont grisés.
+- Couleur de cadre propre à chaque photo, avec la couleur obtenue affichée et une retouche légère de la teinte, de la saturation et de la clarté (double-clic sur un curseur pour le remettre à zéro).
+- Nouvelles couleurs tirées de la photo : complémentaire et de contraste. On choisit d'où vient la couleur de référence : dominante, bords ou moyenne.
+- Aperçu carrousel : les images voisines apparaissent de part et d'autre, comme un post Instagram. On les fait défiler à la souris, aux flèches ou au clavier. Le feuilletage est rapide, et le bouton Recadrer est disponible sur les images recadrées.
+- Avec un fond uni, le cadre entoure maintenant toute l'image, comme avec un fond flouté. Cela change l'aspect des images à fond uni (noir ou blanc).
+- Pour un paysage, la photo entière vient maintenant avant le découpage par défaut. Les deux photos entières (droite et pivotée) se placent avant ou après le découpage, à la fin du carrousel, ou se suppriment.
+- La grille d'ordre ajoute des colonnes quand on agrandit la fenêtre, et avertit au-delà des 20 images d'Instagram (numéros en rouge). Un panorama peut être découpé en 20 tranches au maximum.
+
 ## v0.11.3
 
 ### English
