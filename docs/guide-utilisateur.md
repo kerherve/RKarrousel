@@ -146,6 +146,7 @@ Sur une image « recadrage », « Recadrer… » ouvre l'éditeur :
 « Voir en grand » ouvre le rendu en pleine résolution :
 
 - Molette : zoom ; glisser : déplacer l'image ; « Ajuster » et « 100 % » pour revenir.
+- Flèches rondes sur les bords (ou touches ← →) : image précédente ou suivante de la grille, sans fermer la fenêtre. Les images exclues sont sautées ; le rang (3 / 12) est en haut.
 - Clic droit + glisser : règle qui mesure en pixels, par exemple l'épaisseur du cadre.
 - L'épaisseur du cadre est aussi mesurée automatiquement et affichée en haut.
 - Panneau « Réglages » à droite : épaisseur et couleur du cadre, fond (uni ou flou), signature, couleurs tirées de la photo. Ce que l'image affichée n'utilise pas est grisé : une tranche de panorama ou un recadrage n'a ni fond ni signature. L'image se recalcule après chaque changement, sans retourner dans l'onglet Réglages ; le bouton « Réglages » masque ou affiche le panneau.
@@ -195,7 +196,7 @@ Réglages → « Google Drive » : cochez « Envoyer les images sur Google Drive
 - F1 : ouvrir ce guide.
 - Grille d'ordre : Suppr exclut l'image sélectionnée ; Entrée l'ouvre en grand.
 - Éditeur de recadrage : ↑ ↓ ← → déplacent le cadre (Maj : plus vite) ; Entrée valide ; Échap annule.
-- Vue en grand : Échap ferme la fenêtre.
+- Vue en grand : ← → image précédente / suivante ; Échap ferme la fenêtre.
 
 
 ## En cas de problème

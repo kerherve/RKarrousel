@@ -181,8 +181,23 @@ class OrderWindow(tk.Toplevel):
         if tile is not None:
             ImageViewer(
                 self, tile.source, tile.kind, self.config_snapshot, dark=self.dark,
-                ctx=self.settings_ctx, on_settings_changed=self.refresh,
+                ctx=self.settings_ctx, on_settings_changed=self.refresh, navigator=self,
             )
+
+    # ------------------------------------------------------------------ navigation de la visionneuse
+    def viewer_step(self, delta: int):
+        """Passe à l'image affichée suivante (+1) ou précédente (-1) : la sélectionne et la renvoie, sinon None."""
+        index = self.model.step_from_selection(delta)
+        if index is None:
+            return None
+        self.select(index)
+        return self.model.tiles[index]
+
+    def viewer_can_step(self, delta: int) -> bool:
+        return self.model.step_from_selection(delta) is not None
+
+    def viewer_position(self):
+        return self.model.position_of_selection()
 
     def crop_selected(self) -> None:
         tile = self.model.selected_tile()

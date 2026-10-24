@@ -17,6 +17,7 @@ class PhotoFrameGroup(ttk.LabelFrame):
     def __init__(self, parent, ctx: AppContext, source: Path, on_change: Callable[[], None]):
         super().__init__(parent, text=t("photo_group"), padding=12)
         self.ctx, self.source, self.on_change = ctx, source, on_change
+        self._loading = False
         current = photo_override_for(ctx.config, source)
         self.mode = tk.StringVar(value=current.get("border_color_mode", GLOBAL))
         self.color = tk.StringVar(value=current.get("border_color", ctx.model.border_color.get()))
@@ -33,6 +34,18 @@ class PhotoFrameGroup(ttk.LabelFrame):
         bind_trace(self, ctx.model.no_frame, self.refresh_state)
         self.refresh_state()
 
+    def set_source(self, source: Path) -> None:
+        """Passe à une autre photo : affiche son réglage propre (sans rien enregistrer)."""
+        self.source = source
+        current = photo_override_for(self.ctx.config, source)
+        self._loading = True
+        try:
+            self.mode.set(current.get("border_color_mode", GLOBAL))
+            self.color.set(current.get("border_color", self.ctx.model.border_color.get()))
+        finally:
+            self._loading = False
+        self.refresh_state()
+
     def refresh_state(self) -> None:
         """Sans cadre, il n'y a rien à colorier ; la couleur fixe n'a de sens que pour le mode « couleur fixe »."""
         framed = not self.ctx.model.no_frame.get()
@@ -40,6 +53,8 @@ class PhotoFrameGroup(ttk.LabelFrame):
         self.picker.set_enabled(framed and self.mode.get() == "fixed")
 
     def _changed(self) -> None:
+        if self._loading:
+            return
         self.store()
         self.refresh_state()
         self.on_change()

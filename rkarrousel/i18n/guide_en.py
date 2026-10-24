@@ -110,6 +110,7 @@ GUIDE = [
         ("p", "\"View large\" opens the full-resolution rendering:"),
         ("bullets", [
             "Wheel: zoom; drag: move the image; \"Fit\" and \"100%\" to go back.",
+            "Round arrows on the edges (or the \u2190 \u2192 keys): previous or next image of the grid, without closing the window. Excluded images are skipped; the position (3 / 12) is shown at the top.",
             "Right-click + drag: a ruler that measures in pixels, for example the frame thickness.",
             "The frame thickness is also measured automatically and shown at the top.",
             "\"Settings\" panel on the right: frame thickness and colour, background (solid or blurred), signature, colours taken from the photo. What the displayed image does not use is greyed out: a panorama slice or a crop has neither background nor signature. The image is recomputed after each change, without going back to the Settings tab; the \"Settings\" button hides or shows the panel.",
@@ -154,7 +155,7 @@ GUIDE = [
             "F1: open this guide.",
             "Order grid: Delete excludes the selected image; Enter opens it large.",
             "Crop editor: arrows move the frame (Shift: faster); Enter applies; Esc cancels.",
-            "Large view: Esc closes the window.",
+            "Large view: \u2190 \u2192 previous / next image; Esc closes the window.",
         ]),
     ]),
     ("help", "If something goes wrong", [

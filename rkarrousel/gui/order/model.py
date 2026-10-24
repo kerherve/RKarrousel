@@ -89,6 +89,23 @@ class OrderModel:
     def select(self, index: Optional[int]) -> None:
         self.selected = index
 
+    def step_from_selection(self, delta: int) -> Optional[int]:
+        """Index de l'image affichée (non exclue) la plus proche de la sélection dans le sens `delta` (±1), ou None."""
+        index = self.selected
+        if index is None:
+            return None
+        index += delta
+        while 0 <= index < len(self.tiles):
+            if not self.tiles[index].excluded:
+                return index
+            index += delta
+        return None
+
+    def position_of_selection(self) -> Tuple[int, int]:
+        """(rang de l'image sélectionnée parmi les images non exclues, nombre d'images non exclues)."""
+        total = sum(1 for tile in self.tiles if not tile.excluded)
+        return (self.number_of(self.selected) if self.selected is not None else 0), total
+
     def index_of(self, key: str) -> Optional[int]:
         return next((i for i, tile in enumerate(self.tiles) if tile.key == key), None)
 

@@ -282,6 +282,51 @@ class GuiFlowTests(unittest.TestCase):
                 return found
         return None
 
+    def test_viewer_rerenders_when_the_colour_source_changes(self):
+        from rkarrousel.gui import image_viewer
+
+        self.app.model.border_color_mode.set("dominant")
+        window = self.open_order_window(self.photos[:1])
+        window.select(0)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        self.app.model.color_source.set("edges")
+        self.pump(lambda: viewer.generation == 1 and viewer.settings_changed and "px" in viewer.info.get())
+        self.assertEqual(viewer.config_snapshot["color_source"], "edges")
+        viewer.close()
+
+    def test_viewer_steps_through_the_images_with_arrows_and_keys(self):
+        from rkarrousel.gui import image_viewer
+        from rkarrousel.i18n import kind_label
+
+        window = self.open_order_window(self.photos[:2])  # 1 image + 4 images (paysage) = 5
+        window.select(0)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        self.assertEqual(viewer.position_label.cget("text"), "1 / 5")
+        self.assertFalse(window.viewer_can_step(-1))  # première image : pas de flèche précédente
+        first_source = viewer.source
+        viewer.step(1)
+        self.assertEqual(window.model.selected, 1)
+        self.assertEqual(viewer.position_label.cget("text"), "2 / 5")
+        self.assertIn(kind_label(window.model.tiles[1].kind), viewer.title())
+        self.pump(lambda: viewer.image is not None and viewer.generation == 1)
+        viewer._key_step(1)
+        self.assertEqual(window.model.selected, 2)
+        # une image exclue est sautée
+        window.select(3)
+        window.toggle_exclude()
+        window.select(2)
+        viewer.show(window.model.tiles[2].source, window.model.tiles[2].kind)
+        viewer.step(1)
+        self.assertEqual(window.model.selected, 4)
+        viewer.step(1)  # dernière : rien ne bouge
+        self.assertEqual(window.model.selected, 4)
+        self.assertNotEqual(first_source, None)
+        viewer.close()
+
     def test_crop_button_is_only_enabled_on_a_crop_tile(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
         crop_index = window.model.index_of([t.key for t in window.tiles if t.kind == "crop34"][0])

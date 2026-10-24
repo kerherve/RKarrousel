@@ -38,9 +38,12 @@ class ImageViewer(tk.Toplevel):
         dark: bool = False,
         ctx=None,
         on_settings_changed: Optional[Callable[[], None]] = None,
+        navigator=None,
     ):
         """`ctx` (AppContext) active le panneau de réglages ; `on_settings_changed` est appelé à la fermeture si
-        des réglages ont été modifiés (pour rafraîchir la grille d'ordre)."""
+        des réglages ont été modifiés (pour rafraîchir la grille d'ordre). `navigator` (la grille d'ordre) permet de
+        passer à l'image suivante ou précédente : `viewer_step(±1)` renvoie la vignette voulue, `viewer_position()`
+        le rang (n, total)."""
         super().__init__(parent)
         self.title(f"{source.name} — {kind_label(kind)}")
         self.source, self.kind, self.config_snapshot = source, kind, dict(config)
@@ -57,7 +60,7 @@ class ImageViewer(tk.Toplevel):
         self.ruler: Optional[tuple] = None
         self.events: "queue.Queue[tuple]" = queue.Queue()
         self._closing = False
-        self.ctx, self.on_settings_changed = ctx, on_settings_changed
+        self.ctx, self.on_settings_changed, self.navigator = ctx, on_settings_changed, navigator
         self.generation = 0  # numéro du dernier rendu demandé : les résultats plus anciens sont ignorés
         self.loaded_once = False
         self.settings_changed = False
@@ -65,9 +68,14 @@ class ImageViewer(tk.Toplevel):
 
         self._build_ui()
         self.bind("<Escape>", lambda e: self.close())
+        if navigator is not None:
+            self.bind("<Left>", lambda e: self._key_step(-1))
+            self.bind("<Right>", lambda e: self._key_step(1))
         self.protocol("WM_DELETE_WINDOW", self.close)
         threading.Thread(target=self._load, args=(self.generation, dict(config)), daemon=True).start()
         self.after(80, self._poll)
+        self.after(50, self._draw_nav)  # une fois la fenêtre dimensionnée
+        self._update_position()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
@@ -95,6 +103,8 @@ class ImageViewer(tk.Toplevel):
         ttk.Button(bar, text="+", width=3, command=lambda: self.zoom_by(ZOOM_STEP)).pack(side=tk.LEFT, padx=(6, 0))
         self.zoom_label = ttk.Label(bar, text="")
         self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
+        self.position_label = ttk.Label(bar, text="")
+        self.position_label.pack(side=tk.LEFT, padx=(16, 0))
         ttk.Button(bar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
         if self.side is not None:
             self.settings_button = ttk.Button(bar, text=t("viewer_settings"), command=self.toggle_settings)
@@ -116,6 +126,9 @@ class ImageViewer(tk.Toplevel):
         self.canvas.bind("<MouseWheel>", self._on_wheel)
         self.canvas.bind("<Button-4>", lambda e: self._zoom_at(e.x, e.y, ZOOM_STEP))
         self.canvas.bind("<Button-5>", lambda e: self._zoom_at(e.x, e.y, 1 / ZOOM_STEP))
+        self.canvas.tag_bind("nav_prev", "<ButtonPress-1>", lambda e: self.step(-1))
+        self.canvas.tag_bind("nav_next", "<ButtonPress-1>", lambda e: self.step(1))
+        self._update_position()
 
     def _build_settings_panel(self, parent: tk.Misc) -> ttk.Frame:
         """Cadre et fond : les mêmes groupes que l'onglet Réglages, branchés sur les mêmes variables."""
@@ -125,23 +138,28 @@ class ImageViewer(tk.Toplevel):
         inner = make_scrollable(side, ttk.Style().lookup("TFrame", "background") or self.bg)
         inner.configure(padding=(0, 0, 8, 0))
         FrameGroup(inner, self.ctx).pack(fill=tk.X)
-        PhotoFrameGroup(inner, self.ctx, self.source, self._schedule_rerender).pack(fill=tk.X, pady=(10, 0))
-        features = self._features()
-        fill = self.fill_group = FillGroup(inner, self.ctx)
-        signature = self.signature_group = SignatureGroup(inner, self.ctx)
-        fill.pack(fill=tk.X, pady=(10, 0))
-        signature.pack(fill=tk.X, pady=(10, 0))
-        fill.set_applicable("fill" in features)  # ce que l'image affichée n'utilise pas est grisé
-        signature.set_applicable("signature" in features)
+        self.photo_group = PhotoFrameGroup(inner, self.ctx, self.source, self._schedule_rerender)
+        self.photo_group.pack(fill=tk.X, pady=(10, 0))
+        self.fill_group = FillGroup(inner, self.ctx)
+        self.signature_group = SignatureGroup(inner, self.ctx)
+        self.fill_group.pack(fill=tk.X, pady=(10, 0))
+        self.signature_group.pack(fill=tk.X, pady=(10, 0))
+        self._apply_features()
         ttk.Label(inner, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(430 * self.scale_ui),
                   justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
         for variable in (
             model.frame_percent, model.no_frame, model.border_color, model.border_color_mode,
             model.landscape_fill_mode, model.background_color, model.background_color_mode, model.blur_strength,
-            model.signature_path, model.signature_position, model.signature_scale,
+            model.signature_path, model.signature_position, model.signature_scale, model.color_source,
         ):
             bind_trace(side, variable, self._schedule_rerender)
         return side
+
+    def _apply_features(self) -> None:
+        """Grise ce que l'image affichée n'utilise pas (fond, signature)."""
+        features = self._features()
+        self.fill_group.set_applicable("fill" in features)
+        self.signature_group.set_applicable("signature" in features)
 
     def _features(self) -> frozenset:
         try:
@@ -265,6 +283,7 @@ class ImageViewer(tk.Toplevel):
         self._zoom_at(event.x, event.y, ZOOM_STEP if event.delta > 0 else 1 / ZOOM_STEP)
 
     def _on_resize(self) -> None:
+        self._draw_nav()
         if self.image is None:
             return
         if self.fit_mode:
@@ -273,6 +292,8 @@ class ImageViewer(tk.Toplevel):
             self.redraw()
 
     def _pan_start(self, event) -> None:
+        if "nav" in self.canvas.gettags("current"):
+            return  # clic sur une flèche de navigation
         self.pan = (event.x, event.y, self.ox, self.oy)
 
     def _pan_move(self, event) -> None:
@@ -283,6 +304,75 @@ class ImageViewer(tk.Toplevel):
         self.oy = oy - (event.y - y0) / self.zoom
         self.fit_mode = False
         self.redraw()
+
+    # ------------------------------------------------------------------ navigation entre les images
+    def _draw_nav(self) -> None:
+        """Flèches rondes sur les bords gauche et droit de l'image : précédente / suivante (absentes aux extrémités)."""
+        canvas = self.canvas
+        canvas.delete("nav")
+        if self.navigator is None:
+            return
+        vw, vh = self._viewport()
+        s = self.scale_ui
+        radius = int(24 * s)
+        for delta, tag, x, symbol in ((-1, "nav_prev", radius + int(10 * s), "‹"),
+                                       (1, "nav_next", vw - radius - int(10 * s), "›")):
+            if not self.navigator.viewer_can_step(delta):
+                continue
+            y = vh // 2
+            canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#202020", outline="#9a9a9a",
+                               width=2, tags=("nav", tag))
+            canvas.create_text(x, y - int(3 * s), text=symbol, fill="#ffffff", font=("Segoe UI", int(24 * s), "bold"),
+                               tags=("nav", tag))
+        canvas.tag_raise("nav")
+        canvas.configure(cursor="fleur")
+        for tag in ("nav_prev", "nav_next"):
+            canvas.tag_bind(tag, "<Enter>", lambda e: canvas.configure(cursor="hand2"))
+            canvas.tag_bind(tag, "<Leave>", lambda e: canvas.configure(cursor="fleur"))
+
+    def _update_position(self) -> None:
+        if self.navigator is None:
+            return
+        number, total = self.navigator.viewer_position()
+        self.position_label.configure(text=f"{number} / {total}" if total else "")
+
+    def _key_step(self, delta: int) -> None:
+        """Flèches du clavier : on n'intercepte pas la frappe quand on édite un champ du panneau de réglages."""
+        try:
+            focused = self.focus_get()
+        except (KeyError, tk.TclError):
+            focused = None
+        if isinstance(focused, (tk.Entry, ttk.Entry, tk.Spinbox, ttk.Spinbox, ttk.Combobox)):
+            return
+        self.step(delta)
+
+    def step(self, delta: int) -> None:
+        tile = self.navigator.viewer_step(delta) if self.navigator is not None else None
+        if tile is not None:
+            self.show(tile.source, tile.kind)
+
+    def show(self, source: Path, kind: str) -> None:
+        """Affiche une autre image dans la même fenêtre (zoom et règle repartent de zéro)."""
+        if self._rerender_job is not None:
+            self.after_cancel(self._rerender_job)
+            self._rerender_job = None
+        self.source, self.kind = source, kind
+        self.title(f"{source.name} — {kind_label(kind)}")
+        self.image = self.photo = None
+        self.loaded_once = False
+        self.ruler = self.pan = None
+        self.fit_mode = True
+        self.canvas.delete("img", "ruler")
+        self.measure.set(t("viewer_hint"))
+        self.info.set(t("viewer_loading"))
+        self.config_snapshot = dict(self.ctx.collect_config()) if self.ctx is not None else self.config_snapshot
+        if self.side is not None:
+            self.photo_group.set_source(source)
+            self._apply_features()
+        self.generation += 1
+        threading.Thread(target=self._load, args=(self.generation, dict(self.config_snapshot)), daemon=True).start()
+        self._update_position()
+        self._draw_nav()
 
     # ------------------------------------------------------------------ règle
     def _ruler_start(self, event) -> None:
@@ -330,6 +420,7 @@ class ImageViewer(tk.Toplevel):
         canvas.tag_lower("img")
         if self.ruler:
             self._draw_ruler()
+        canvas.tag_raise("nav")
 
     def close(self) -> None:
         self._closing = True
