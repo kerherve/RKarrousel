@@ -116,7 +116,7 @@ GUIDE = [
         ]),
     ]),
     ("numbering", "Numérotation des fichiers", [
-        ("p", "Avec « Numéroter les fichiers selon l'ordre » (onglet Fichiers), chaque image est préfixée par son numéro : 01_, 02_, 03_… "
+        ("p", "Avec « Numéroter les fichiers » (Réglages → « Fichiers générés »), chaque image est préfixée par son numéro : 01_, 02_, 03_… "
               "(trois chiffres au-delà de 99). L'ordre est celui de la grille."),
         ("p", "Vous copiez ensuite les fichiers sur votre drive ou votre téléphone sans rien renommer : l'ordre alphabétique est celui du carrousel."),
         ("note", "Relancer un traitement avec un autre ordre dans le même dossier ne supprime pas les anciens fichiers : videz le dossier avant si besoin."),

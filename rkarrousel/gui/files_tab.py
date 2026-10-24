@@ -107,9 +107,6 @@ class FilesTab(ttk.Frame):
         ttk.Entry(dest, textvariable=self.model.dest_dir, state="readonly").grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
         ttk.Button(dest, text=t("choose_folder"), command=self.choose_dest).grid(row=0, column=1, padx=(0, 4))
         ttk.Button(dest, text=t("open"), command=self.open_dest_folder).grid(row=0, column=2)
-        ttk.Checkbutton(dest, text=t("number_files"), variable=self.model.number_files).grid(
-            row=1, column=0, columnspan=3, sticky=tk.W, pady=(8, 0)
-        )
         self.setup_drop_target()
         self.refresh_list()
 

@@ -111,7 +111,7 @@ GUIDE = [
         ]),
     ]),
     ("numbering", "File numbering", [
-        ("p", "With \"Number files according to the order\" (Files tab), each image is prefixed with its number: 01_, 02_, 03_... "
+        ("p", "With \"Number files\" (Settings -> \"Generated files\"), each image is prefixed with its number: 01_, 02_, 03_... "
               "(three digits beyond 99). The order is the grid's."),
         ("p", "You then copy the files to your drive or phone without renaming anything: alphabetical order is the carousel order."),
         ("note", "Running a new processing with another order in the same folder does not delete the old files: empty the folder first if needed."),

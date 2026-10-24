@@ -146,7 +146,7 @@ Sur une image « recadrage », « Recadrer… » ouvre l'éditeur :
 
 ## Numérotation des fichiers
 
-Avec « Numéroter les fichiers selon l'ordre » (onglet Fichiers), chaque image est préfixée par son numéro : 01_, 02_, 03_… (trois chiffres au-delà de 99). L'ordre est celui de la grille.
+Avec « Numéroter les fichiers » (Réglages → « Fichiers générés »), chaque image est préfixée par son numéro : 01_, 02_, 03_… (trois chiffres au-delà de 99). L'ordre est celui de la grille.
 
 Vous copiez ensuite les fichiers sur votre drive ou votre téléphone sans rien renommer : l'ordre alphabétique est celui du carrousel.
 

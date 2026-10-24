@@ -222,7 +222,7 @@ class SignatureGroup(ttk.LabelFrame):
 
 
 class OutputGroup(ttk.LabelFrame):
-    """Qualité JPEG, format et largeur des images produites."""
+    """Qualité JPEG, format, largeur des images produites et numérotation des fichiers."""
 
     def __init__(self, parent, ctx: AppContext):
         super().__init__(parent, text=t("output_group"), padding=12)
@@ -246,6 +246,11 @@ class OutputGroup(ttk.LabelFrame):
         )
         self.width_box.grid(row=2, column=1, columnspan=2, sticky=tk.W, padx=8, pady=(10, 0))
         HintLabel(self, t("output_width_hint")).grid(row=3, column=0, columnspan=3, sticky=tk.EW, pady=(4, 0))
+
+        ttk.Checkbutton(self, text=t("number_files"), variable=model.number_files).grid(
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=(12, 0)
+        )
+        HintLabel(self, t("number_files_hint")).grid(row=5, column=0, columnspan=3, sticky=tk.EW, pady=(2, 0))
 
 
 class KindsGroup(ttk.LabelFrame):
