@@ -5,6 +5,7 @@ from typing import Dict
 from rkarrousel import i18n
 from rkarrousel.config import (
     COLOR_MODES,
+    color_source_of,
     DEFAULT_BACKGROUND_COLOR_HEX,
     DEFAULT_BLUR_STRENGTH,
     DEFAULT_BORDER_COLOR_HEX,
@@ -42,6 +43,7 @@ class SettingsModel:
         self.no_frame = tk.BooleanVar(value=cfg.get("frame_enabled", True) is False)
         self.border_color = tk.StringVar(value=cfg.get("border_color", DEFAULT_BORDER_COLOR_HEX))
         self.border_color_mode = tk.StringVar(value=cfg.get("border_color_mode", "fixed"))
+        self.color_source = tk.StringVar(value=color_source_of(cfg))
         self.landscape_fill_mode = tk.StringVar(value=cfg.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE))
         self.background_color = tk.StringVar(value=cfg.get("background_color", DEFAULT_BACKGROUND_COLOR_HEX))
         self.background_color_mode = tk.StringVar(value=cfg.get("background_color_mode", "fixed"))
@@ -67,7 +69,8 @@ class SettingsModel:
         text_vars = {
             "border_color": self.border_color, "border_color_mode": self.border_color_mode,
             "landscape_fill_mode": self.landscape_fill_mode, "background_color": self.background_color,
-            "background_color_mode": self.background_color_mode, "signature_path": self.signature_path,
+            "background_color_mode": self.background_color_mode, "color_source": self.color_source,
+            "signature_path": self.signature_path,
             "signature_position": self.signature_position, "output_format": self.output_format,
         }
         for key, var in text_vars.items():
@@ -108,6 +111,7 @@ class SettingsModel:
         cfg["border_color_mode"] = self._mode(self.border_color_mode)
         cfg["background_color"] = self.background_color.get()
         cfg["background_color_mode"] = self._mode(self.background_color_mode)
+        cfg["color_source"] = color_source_of({"color_source": self.color_source.get()})
         cfg["disabled_kinds"] = [kind for kind, var in self.kind_vars.items() if not var.get()]
         cfg["blur_strength"] = var_value(self.blur_strength, DEFAULT_BLUR_STRENGTH)
         cfg["jpeg_quality"] = var_value(self.jpeg_quality, DEFAULT_JPEG_QUALITY)

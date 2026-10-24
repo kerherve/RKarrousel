@@ -9,7 +9,8 @@ par défaut (`config.py` valide chaque accès). Les chemins `/mnt/c/…` et `C:\
 | `frame_enabled` | `true` / `false` | `true` | Cadre autour de l'image (`false` = « Sans cadre ») |
 | `frame_ratio` | 0 à ~0,1 | `0.04` | Épaisseur du cadre, fraction du plus petit côté (l'appli l'affiche en %) |
 | `border_color` | `"#RRGGBB"` | `#FFFFFF` | Couleur du cadre |
-| `border_color_mode` | `fixed`, `dominant`, `light`, `dark` | `fixed` | Cadre fixe, ou tiré de la photo (dominante / claire / sombre) |
+| `border_color_mode` | `fixed`, `dominant`, `light`, `dark`, `complement`, `contrast` | `fixed` | Cadre fixe, ou tiré de la photo : tel quel, version claire, sombre, complémentaire (teinte opposée adoucie) ou de contraste (presque blanc/noir) |
+| `color_source` | `dominant`, `edges`, `average` | `dominant` | D'où vient la couleur de référence des modes « tirée de la photo » : dominante, bords ou moyenne |
 | `landscape_fill_mode` | `black`, `blur` | `black` | Fond quand la photo n'a pas le format : uni ou flouté |
 | `background_color` | `"#RRGGBB"` | `#000000` | Couleur du fond uni |
 | `background_color_mode` | comme `border_color_mode` | `fixed` | Fond uni fixe ou tiré de la photo |
@@ -23,6 +24,7 @@ par défaut (`config.py` valide chaque accès). Les chemins `/mnt/c/…` et `C:\
 | `disabled_kinds` | liste de types | `[]` | Types d'images non produits (`part1` règle la première tranche, `part2` les suivantes) |
 | `number_files` | `true` / `false` | `true` | Préfixer les fichiers `01_`, `02_`… |
 | `crop_offsets` | `{chemin: 0..1}` | `{}` | Zone conservée des recadrages, par photo |
+| `photo_overrides` | `{chemin: {border_color_mode, border_color}}` | `{}` | Couleur du cadre propre à une photo : remplace le réglage général pour elle seule (seules ces deux clés sont lues) |
 | `presets` | `{nom: {clé: valeur}}` | `{}` | Préréglages de l'utilisateur (voir `presets.PRESET_KEYS` pour les clés mémorisées) |
 | `last_source_dir`, `last_dest_dir` | chemin | — | Derniers dossiers utilisés |
 | `language` | `fr`, `en` | `fr` | Langue de l'interface |

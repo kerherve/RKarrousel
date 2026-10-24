@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 PRESET_KEYS = (
-    "frame_enabled", "frame_ratio", "border_color", "border_color_mode",
+    "frame_enabled", "frame_ratio", "border_color", "border_color_mode", "color_source",
     "landscape_fill_mode", "background_color", "background_color_mode", "blur_strength",
     "signature_path", "signature_position", "signature_scale",
     "output_format", "output_width", "jpeg_quality", "disabled_kinds",

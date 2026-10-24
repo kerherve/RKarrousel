@@ -1,14 +1,19 @@
-"""Couleurs tirées de la photo : couleur dominante et variantes claire / sombre pour le cadre et le fond uni."""
+"""Couleurs tirées de la photo pour le cadre et le fond uni : une couleur de référence (dominante, moyenne ou des
+bords) et ses variantes claire, sombre, complémentaire et de contraste."""
+import colorsys
 from pathlib import Path
 from typing import Tuple
 
-from PIL import Image
+from PIL import Image, ImageStat
 
-from rkarrousel.config import color_mode_of
+from rkarrousel.config import color_mode_of, color_source_of
 
 Color = Tuple[int, int, int]
 LIGHT_MIX = 0.65   # part de blanc de la variante claire
 DARK_MIX = 0.65    # part de noir de la variante sombre
+CONTRAST_LIGHT_MIX = 0.9   # contraste sur photo sombre : presque blanc, avec un soupçon de la teinte
+CONTRAST_DARK_MIX = 0.88   # contraste sur photo claire : presque noir
+EDGE_FRACTION = 0.06       # épaisseur de la bande de bord, en fraction du plus petit côté
 
 
 def dominant_color(img: Image.Image) -> Color:
@@ -21,12 +26,64 @@ def dominant_color(img: Image.Image) -> Color:
     return (palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2])
 
 
+def average_color(img: Image.Image) -> Color:
+    """Couleur moyenne de toute la photo."""
+    small = img.convert("RGB")
+    small.thumbnail((96, 96), Image.Resampling.BOX)
+    return tuple(round(v) for v in ImageStat.Stat(small).mean[:3])  # type: ignore[return-value]
+
+
+def edge_color(img: Image.Image) -> Color:
+    """Couleur moyenne d'une bande le long des quatre bords : ce que le cadre touche vraiment."""
+    small = img.convert("RGB")
+    small.thumbnail((96, 96), Image.Resampling.BOX)
+    width, height = small.size
+    band = max(1, round(min(width, height) * EDGE_FRACTION))
+    strips = [(0, 0, width, band), (0, height - band, width, height), (0, band, band, height - band),
+              (width - band, band, width, height - band)]
+    totals, count = [0.0, 0.0, 0.0], 0
+    for box in strips:
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        region = small.crop(box)
+        pixels = region.size[0] * region.size[1]
+        for channel, mean in enumerate(ImageStat.Stat(region).mean[:3]):
+            totals[channel] += mean * pixels
+        count += pixels
+    return tuple(round(total / count) for total in totals)  # type: ignore[return-value]
+
+
+def reference_color(img: Image.Image, source: str = "dominant") -> Color:
+    """Couleur de référence de la photo, selon la source choisie (`dominant`, `edges` ou `average`)."""
+    if source == "edges":
+        return edge_color(img)
+    if source == "average":
+        return average_color(img)
+    return dominant_color(img)
+
+
+def luminance(color: Color) -> float:
+    """Luminosité perçue, de 0 (noir) à 1 (blanc)."""
+    r, g, b = color
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+
+
 def styled_color(color: Color, style: str) -> Color:
-    """Variante de la couleur : `dominant` (telle quelle), `light` (éclaircie vers le blanc), `dark` (assombrie)."""
+    """Variante de la couleur : `dominant` (telle quelle), `light` (éclaircie vers le blanc), `dark` (assombrie),
+    `complement` (teinte opposée, saturation et clarté tempérées) ou `contrast` (presque blanc sur une photo sombre,
+    presque noir sur une photo claire)."""
     if style == "light":
         return tuple(round(c + (255 - c) * LIGHT_MIX) for c in color)  # type: ignore[return-value]
     if style == "dark":
         return tuple(round(c * (1 - DARK_MIX)) for c in color)  # type: ignore[return-value]
+    if style == "complement":
+        h, light, s = colorsys.rgb_to_hls(*(c / 255 for c in color))
+        r, g, b = colorsys.hls_to_rgb((h + 0.5) % 1.0, min(0.75, max(0.3, light)), min(0.65, s))
+        return (round(r * 255), round(g * 255), round(b * 255))
+    if style == "contrast":
+        if luminance(color) < 0.5:
+            return tuple(round(c + (255 - c) * CONTRAST_LIGHT_MIX) for c in color)  # type: ignore[return-value]
+        return tuple(round(c * (1 - CONTRAST_DARK_MIX)) for c in color)  # type: ignore[return-value]
     return color
 
 
@@ -40,11 +97,11 @@ def resolve_photo_colors(img: Image.Image, config: dict) -> dict:
     modes = {key: color_mode_of(config, f"{key}_mode") for key in ("border_color", "background_color")}
     if all(mode == "fixed" for mode in modes.values()):
         return config
-    dominant = dominant_color(img)
+    reference = reference_color(img, color_source_of(config))
     resolved = dict(config)
     for key, mode in modes.items():
         if mode != "fixed":
-            resolved[key] = to_hex(styled_color(dominant, mode))
+            resolved[key] = to_hex(styled_color(reference, mode))
     return resolved
 
 

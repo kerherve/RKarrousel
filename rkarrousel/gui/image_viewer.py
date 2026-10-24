@@ -12,11 +12,12 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
+from rkarrousel.gui.photo_frame_group import PhotoFrameGroup
 from rkarrousel.gui.settings_groups import FillGroup, FrameGroup, SignatureGroup
-from rkarrousel.gui.widgets import bind_trace
+from rkarrousel.gui.widgets import bind_trace, make_scrollable
 from rkarrousel.i18n import kind_label, t
 from rkarrousel.imaging.colors import resolve_photo_colors_for_path
-from rkarrousel.config import background_color_of, border_color_of
+from rkarrousel.config import background_color_of, border_color_of, config_for_photo
 from rkarrousel.imaging.frames import measure_border
 from rkarrousel.outputs import kind_features, render_output
 from rkarrousel.pipeline import peek_size
@@ -72,7 +73,7 @@ class ImageViewer(tk.Toplevel):
     def _build_ui(self) -> None:
         s = self.scale_ui
         screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
-        wide = int(380 * s) if self.ctx is not None else 0  # place du panneau de réglages
+        wide = int(500 * s) if self.ctx is not None else 0  # place du panneau de réglages
         width, height = min(int(980 * s) + wide, screen_w - 60), min(int(860 * s), screen_h - 120)
         self.geometry(f"{width}x{height}+{max(0, (screen_w - width) // 2)}+{max(0, (screen_h - height) // 2 - 30)}")
         self.minsize(int(480 * s), int(360 * s))
@@ -119,16 +120,20 @@ class ImageViewer(tk.Toplevel):
     def _build_settings_panel(self, parent: tk.Misc) -> ttk.Frame:
         """Cadre et fond : les mêmes groupes que l'onglet Réglages, branchés sur les mêmes variables."""
         model = self.ctx.model
-        side = ttk.Frame(parent, width=int(360 * self.scale_ui))
-        FrameGroup(side, self.ctx).pack(fill=tk.X)
+        side = ttk.Frame(parent, width=int(480 * self.scale_ui))
+        side.pack_propagate(False)  # largeur fixe ; le panneau défile quand la fenêtre est trop basse
+        inner = make_scrollable(side, ttk.Style().lookup("TFrame", "background") or self.bg)
+        inner.configure(padding=(0, 0, 8, 0))
+        FrameGroup(inner, self.ctx).pack(fill=tk.X)
+        PhotoFrameGroup(inner, self.ctx, self.source, self._schedule_rerender).pack(fill=tk.X, pady=(10, 0))
         features = self._features()
-        fill = self.fill_group = FillGroup(side, self.ctx)
-        signature = self.signature_group = SignatureGroup(side, self.ctx)
+        fill = self.fill_group = FillGroup(inner, self.ctx)
+        signature = self.signature_group = SignatureGroup(inner, self.ctx)
         fill.pack(fill=tk.X, pady=(10, 0))
         signature.pack(fill=tk.X, pady=(10, 0))
         fill.set_applicable("fill" in features)  # ce que l'image affichée n'utilise pas est grisé
         signature.set_applicable("signature" in features)
-        ttk.Label(side, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(340 * self.scale_ui),
+        ttk.Label(inner, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(430 * self.scale_ui),
                   justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
         for variable in (
             model.frame_percent, model.no_frame, model.border_color, model.border_color_mode,
@@ -206,7 +211,7 @@ class ImageViewer(tk.Toplevel):
     def _describe(self) -> None:
         assert self.image is not None
         width, height = self.image.size
-        config = resolve_photo_colors_for_path(self.source, self.config_snapshot)  # couleurs « de la photo » comprises
+        config = resolve_photo_colors_for_path(self.source, config_for_photo(self.config_snapshot, self.source))  # couleurs « de la photo » comprises
         border = measure_border(self.image, border_color_of(config), skip_color=background_color_of(config))
         if border:
             percent = 100 * border / min(width, height)

@@ -15,6 +15,7 @@ from rkarrousel.pipeline import merge_order, planned_items
 RENDER_KEYS = (
     "frame_ratio", "frame_enabled", "output_format", "landscape_fill_mode", "signature_path", "border_color",
     "blur_strength", "signature_position", "signature_scale", "background_color", "disabled_kinds",
+    "border_color_mode", "background_color_mode", "color_source", "photo_overrides",
 )
 
 

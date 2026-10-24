@@ -18,8 +18,12 @@ DEFAULT_BORDER_COLOR_HEX = "#FFFFFF"
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)
 DEFAULT_BACKGROUND_COLOR_HEX = "#000000"
 DEFAULT_CROP_OFFSET = 0.5
-COLOR_MODES = ("fixed", "dominant", "light", "dark")  # couleur fixe, ou tirée de la photo (dominante / claire / sombre)
+# couleur fixe, ou tirée de la photo : telle quelle, claire, sombre, complémentaire (teinte opposée) ou de contraste
+COLOR_MODES = ("fixed", "dominant", "light", "dark", "complement", "contrast")
 DEFAULT_COLOR_MODE = "fixed"
+COLOR_SOURCES = ("dominant", "edges", "average")  # d'où vient la couleur de référence d'une photo
+DEFAULT_COLOR_SOURCE = "dominant"
+PHOTO_OVERRIDE_KEYS = ("border_color", "border_color_mode")  # réglages qu'on peut fixer photo par photo
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
 DEFAULT_SIGNATURE_POSITION = "bottom-right"
@@ -104,6 +108,27 @@ def color_mode_of(config: dict, key: str) -> str:
     """Mode de la couleur du cadre (`border_color_mode`) ou du fond uni (`background_color_mode`)."""
     mode = config.get(key, DEFAULT_COLOR_MODE)
     return mode if mode in COLOR_MODES else DEFAULT_COLOR_MODE
+
+
+def color_source_of(config: dict) -> str:
+    """Source de la couleur de référence des modes « tirée de la photo »."""
+    source = config.get("color_source", DEFAULT_COLOR_SOURCE)
+    return source if source in COLOR_SOURCES else DEFAULT_COLOR_SOURCE
+
+
+def photo_override_for(config: dict, path) -> dict:
+    """Réglages propres à cette photo (`photo_overrides` : chemin → réglages), limités aux clés autorisées."""
+    overrides = config.get("photo_overrides")
+    values = overrides.get(str(path)) if isinstance(overrides, dict) else None
+    if not isinstance(values, dict):
+        return {}
+    return {key: values[key] for key in PHOTO_OVERRIDE_KEYS if key in values}
+
+
+def config_for_photo(config: dict, path) -> dict:
+    """Config effective pour une photo : les réglages globaux, remplacés par ceux propres à cette photo."""
+    override = photo_override_for(config, path)
+    return {**config, **override} if override else config
 
 
 def background_color_of(config: dict) -> Tuple[int, int, int]:

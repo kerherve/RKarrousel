@@ -7,7 +7,7 @@ from typing import Callable
 
 from rkarrousel import i18n
 from rkarrousel import presets
-from rkarrousel.config import COLOR_MODES, SIGNATURE_POSITIONS
+from rkarrousel.config import COLOR_MODES, COLOR_SOURCES, SIGNATURE_POSITIONS
 from rkarrousel.formats import OUTPUT_FORMATS, OUTPUT_WIDTHS
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.settings_model import ALL_KINDS
@@ -120,6 +120,18 @@ def color_mode_labels():
     return [t(f"color_mode_{mode}") for mode in COLOR_MODES]
 
 
+def color_source_labels():
+    return [t(f"color_source_{source}") for source in COLOR_SOURCES]
+
+
+def color_source_row(group: ttk.LabelFrame, model, row: int, pady: int = 8) -> ChoiceBox:
+    """« Couleur prise sur : … » : d'où vient la couleur de référence des modes « tirée de la photo »."""
+    ttk.Label(group, text=t("color_source")).grid(row=row, column=0, sticky=tk.W, pady=(pady, 0))
+    box = ChoiceBox(group, model.color_source, COLOR_SOURCES, color_source_labels(), width=22)
+    box.grid(row=row, column=1, columnspan=2, sticky=tk.W, pady=(pady, 0), padx=8)
+    return box
+
+
 class FrameGroup(ttk.LabelFrame):
     """Épaisseur et couleur du cadre (fixe ou tirée de la photo), ou pas de cadre."""
 
@@ -138,8 +150,9 @@ class FrameGroup(ttk.LabelFrame):
         self.mode.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(8, 0), padx=8)
         self.color = ColorPicker(self, model.border_color, (255, 255, 255), t("choose_color"))
         self.color.grid(row=2, column=1, columnspan=2, sticky=tk.W, pady=(8, 0), padx=8)
+        self.source = color_source_row(self, model, 3)
         ttk.Checkbutton(self, text=t("no_frame"), variable=model.no_frame, command=self.refresh_state).grid(
-            row=3, column=0, columnspan=3, sticky=tk.W, pady=(10, 0)
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 0)
         )
         bind_trace(self, model.border_color_mode, self.refresh_state)
         bind_trace(self, model.no_frame, self.refresh_state)  # aussi quand un préréglage change la case
@@ -150,7 +163,9 @@ class FrameGroup(ttk.LabelFrame):
         framed = not self.model.no_frame.get()
         self.spin.state(["!disabled"] if framed else ["disabled"])
         self.mode.state(["!disabled"] if framed else ["disabled"])
-        self.color.set_enabled(framed and self.model.border_color_mode.get() == "fixed")
+        from_photo = self.model.border_color_mode.get() != "fixed"
+        self.color.set_enabled(framed and not from_photo)
+        self.source.state(["!disabled"] if framed and from_photo else ["disabled"])
 
 
 class FillGroup(ttk.LabelFrame):
@@ -170,9 +185,10 @@ class FillGroup(ttk.LabelFrame):
         self.mode.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
         self.background = ColorPicker(self, model.background_color, (0, 0, 0), t("bg_color"))
         self.background.grid(row=2, column=1, columnspan=2, sticky=tk.W, pady=(8, 0))
-        ttk.Label(self, text=t("blur_strength")).grid(row=3, column=0, sticky=tk.W, pady=(10, 0))
+        self.source = color_source_row(self, model, 3, pady=8)
+        ttk.Label(self, text=t("blur_strength")).grid(row=4, column=0, sticky=tk.W, pady=(10, 0))
         blur_row = ttk.Frame(self)
-        blur_row.grid(row=3, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
+        blur_row.grid(row=4, column=1, columnspan=2, sticky=tk.W, pady=(10, 0))
         self.blur_spin = ttk.Spinbox(blur_row, from_=0.2, to=5.0, increment=0.1, textvariable=model.blur_strength, width=6)
         self.blur_spin.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(blur_row, text=t("blur_strength_hint")).pack(side=tk.LEFT)
@@ -194,7 +210,9 @@ class FillGroup(ttk.LabelFrame):
             return
         solid = self.model.landscape_fill_mode.get() != "blur"
         self.mode.state(["!disabled"] if solid else ["disabled"])
-        self.background.set_enabled(solid and self.model.background_color_mode.get() == "fixed")
+        from_photo = self.model.background_color_mode.get() != "fixed"
+        self.background.set_enabled(solid and not from_photo)
+        self.source.state(["!disabled"] if solid and from_photo else ["disabled"])
         self.blur_spin.state(["disabled"] if solid else ["!disabled"])
 
 

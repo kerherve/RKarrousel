@@ -253,6 +253,35 @@ class GuiFlowTests(unittest.TestCase):
         self.assertNotIn("non applicable", whole.signature_group.cget("text"))
         whole.close()
 
+    def test_viewer_sets_a_frame_colour_for_this_photo_only(self):
+        from rkarrousel.gui import image_viewer
+        from rkarrousel.gui.photo_frame_group import PhotoFrameGroup
+
+        window = self.open_order_window(self.photos[:2])
+        window.select(0)
+        window.view_selected()
+        viewer = next(w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer))
+        self.pump(lambda: viewer.image is not None)
+        group = self._find(viewer, PhotoFrameGroup)
+        self.assertEqual(group.mode.get(), "global")
+        group.mode.set("contrast")  # cette photo seulement
+        key = str(self.photos[0])
+        self.assertEqual(self.app.ctx.config["photo_overrides"][key]["border_color_mode"], "contrast")
+        self.pump(lambda: viewer.generation == 1 and viewer.settings_changed and "px" in viewer.info.get())
+        self.assertEqual(self.app.model.border_color_mode.get(), "fixed")  # le réglage général n'a pas bougé
+        group.mode.set("global")
+        self.assertNotIn(key, self.app.ctx.config["photo_overrides"])
+        viewer.close()
+
+    def _find(self, widget, cls):
+        for child in widget.winfo_children():
+            if isinstance(child, cls):
+                return child
+            found = self._find(child, cls)
+            if found is not None:
+                return found
+        return None
+
     def test_crop_button_is_only_enabled_on_a_crop_tile(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
         crop_index = window.model.index_of([t.key for t in window.tiles if t.kind == "crop34"][0])

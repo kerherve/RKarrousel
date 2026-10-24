@@ -66,8 +66,12 @@ GUIDE = [
             "Couleur de la photo : la couleur dominante.",
             "Photo, version claire : la dominante éclaircie (élégant pour un cadre).",
             "Photo, version sombre : la dominante assombrie (idéal pour un fond uni).",
+            "Photo, couleur complémentaire : la teinte opposée, adoucie (un ciel bleu donne un cadre chaud, sans orange criard).",
+            "Photo, couleur de contraste : presque blanc sur une photo sombre, presque noir sur une photo claire.",
         ]),
+        ("p", "« Couleur prise sur » choisit la couleur de référence : la couleur dominante, les bords de la photo (ce que le cadre touche vraiment) ou la moyenne de toute la photo."),
         ("p", "Un lot de photos de teintes différentes donne ainsi des cadres assortis à chacune. Toutes les images d'une même photo partagent ses couleurs."),
+        ("note", "Pour une seule photo, la visionneuse (« Voir en grand ») propose une couleur de cadre qui lui est propre : voir « Voir en grand et mesurer »."),
     ]),
     ("presets", "Préréglages", [
         ("p", "Un préréglage mémorise le cadre, le fond, la signature, le format et la taille des images. En haut de l'onglet Réglages :"),
@@ -114,7 +118,8 @@ GUIDE = [
             "Clic droit + glisser : règle qui mesure en pixels, par exemple l'épaisseur du cadre.",
             "L'épaisseur du cadre est aussi mesurée automatiquement et affichée en haut.",
             "Panneau « Réglages » à droite : épaisseur et couleur du cadre, fond (uni ou flou), signature, couleurs tirées de la photo. Ce que l'image affichée n'utilise pas est grisé : une tranche de panorama ou un recadrage n'a ni fond ni signature. L'image se recalcule après chaque changement, sans retourner dans l'onglet Réglages ; le bouton « Réglages » masque ou affiche le panneau.",
-            "Ce sont les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos, et la grille se met à jour à la fermeture.",
+            "« Cadre de cette photo » : une couleur de cadre propre à la photo affichée (fixe, ou tirée de la photo), qui remplace le réglage général pour elle seule. « Comme les réglages généraux » l'annule. Le choix est conservé d'une session à l'autre.",
+            "Le reste du panneau reprend les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos, et la grille se met à jour à la fermeture.",
         ]),
     ]),
     ("numbering", "Numérotation des fichiers", [

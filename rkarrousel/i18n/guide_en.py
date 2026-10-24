@@ -61,8 +61,12 @@ GUIDE = [
             "Photo colour: the dominant colour.",
             "Photo, light version: the dominant colour lightened (elegant for a frame).",
             "Photo, dark version: the dominant colour darkened (ideal for a solid background).",
+            "Photo, complementary colour: the opposite hue, softened (a blue sky gives a warm frame, without a garish orange).",
+            "Photo, contrasting colour: almost white on a dark photo, almost black on a light one.",
         ]),
+        ("p", "\"Colour taken from\" picks the reference colour: the dominant colour, the photo's edges (what the frame actually touches) or the average of the whole photo."),
         ("p", "A batch of photos with different tones thus gets frames matching each one. All images from one photo share its colours."),
+        ("note", "For a single photo, the viewer (\"View large\") offers a frame colour of its own: see \"Large view and measuring\"."),
     ]),
     ("presets", "Presets", [
         ("p", "A preset remembers the frame, background, signature, format and size of the images. At the top of the Settings tab:"),
@@ -109,7 +113,8 @@ GUIDE = [
             "Right-click + drag: a ruler that measures in pixels, for example the frame thickness.",
             "The frame thickness is also measured automatically and shown at the top.",
             "\"Settings\" panel on the right: frame thickness and colour, background (solid or blurred), signature, colours taken from the photo. What the displayed image does not use is greyed out: a panorama slice or a crop has neither background nor signature. The image is recomputed after each change, without going back to the Settings tab; the \"Settings\" button hides or shows the panel.",
-            "These are the settings of the Settings tab: they apply to all photos, and the grid updates when you close the viewer.",
+            "\"This photo's frame\": a frame colour specific to the displayed photo (fixed, or taken from the photo) that replaces the general setting for that photo only. \"Same as the general settings\" cancels it. The choice is kept from one session to the next.",
+            "The rest of the panel reuses the Settings tab: those apply to all photos, and the grid updates when you close the viewer.",
         ]),
     ]),
     ("numbering", "File numbering", [

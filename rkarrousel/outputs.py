@@ -5,7 +5,7 @@ from typing import Collection, Iterator, List, Optional, Tuple
 
 from PIL import Image
 
-from rkarrousel.config import DEFAULT_CROP_OFFSET, crop_offset_for, disabled_kinds_of
+from rkarrousel.config import DEFAULT_CROP_OFFSET, config_for_photo, crop_offset_for, disabled_kinds_of
 from rkarrousel.formats import (
     detect_ratio_type,
     format_tag,
@@ -126,6 +126,7 @@ def render_outputs(path: Path, config: dict, max_side: Optional[int] = None) -> 
     img = open_image(path)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    config = config_for_photo(config, path)
     return list(iter_outputs(img, config, crop_offset=crop_offset_for(config, path)))
 
 
@@ -134,6 +135,7 @@ def render_output(path: Path, config: dict, kind: str, max_side: Optional[int] =
     img = open_image(path)
     if max_side and max(img.size) > max_side:
         img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    config = config_for_photo(config, path)
     for found, out in iter_outputs(img, config, only={kind}, crop_offset=crop_offset_for(config, path)):
         if found == kind:
             return finalize_size(out, config) if not max_side else out

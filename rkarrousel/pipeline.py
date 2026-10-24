@@ -9,7 +9,7 @@ from typing import Callable, Collection, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image
 
-from rkarrousel.config import crop_offset_for, jpeg_quality_of
+from rkarrousel.config import config_for_photo, crop_offset_for, jpeg_quality_of
 from rkarrousel.formats import detect_ratio_type, output_format_of
 from rkarrousel.imaging.frames import open_image, save_image
 from rkarrousel.outputs import finalize_size, item_key, iter_outputs, kinds_for_size, output_name
@@ -83,6 +83,8 @@ def process_image(
     prefixes: Optional[Dict[str, str]] = None,
     excluded: Optional[Collection[str]] = None,
 ) -> List[Path]:
+    crop_offset = crop_offset_for(config, input_path)
+    config = config_for_photo(config, input_path)  # réglages propres à cette photo (couleur du cadre…)
     img = open_image(input_path)
     width, height = img.size
     ratio_type = detect_ratio_type(width, height, output_format_of(config))
@@ -102,7 +104,7 @@ def process_image(
     quality = jpeg_quality_of(config)
     output_files: List[Path] = []
     wanted = [k for k in kinds_for_size(width, height, config) if item_key(input_path, k) not in (excluded or ())]
-    for kind, out_img in iter_outputs(img, config, only=wanted, crop_offset=crop_offset_for(config, input_path)):
+    for kind, out_img in iter_outputs(img, config, only=wanted, crop_offset=crop_offset):
         prefix = (prefixes or {}).get(item_key(input_path, kind), "")
         out_path = output_dir / output_name(input_path, kind, prefix, config)
         save_image(finalize_size(out_img, config), out_path, quality)

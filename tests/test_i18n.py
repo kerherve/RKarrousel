@@ -28,7 +28,8 @@ class I18nTests(unittest.TestCase):
         used |= {"set_kind_part1", "set_kind_part2", "kind_part_n", "width_original", "width_px"}
         used |= {f"fmt_{k}" for k in ("3x4", "4x5", "1x1", "9x16")}
         used |= {f"preset_{k}" for k in ("classic", "dark", "photo_color", "no_frame")}
-        used |= {f"color_mode_{m}" for m in ("fixed", "dominant", "light", "dark")}
+        used |= {f"color_mode_{m}" for m in ("fixed", "dominant", "light", "dark", "complement", "contrast")}
+        used |= {f"color_source_{k}" for k in ("dominant", "edges", "average")}
         used |= {f"upd_{step}" for step in ("downloading", "verifying", "installing")}
         used |= {f"pos_{p}" for p in ("bottom-right", "bottom-center", "bottom-left")}
         used |= {f"kind_{k}" for k in ("framed", "with_sig", "part1", "part2", "part1_with_sig", "part2_with_sig", "crop34")}
