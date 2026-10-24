@@ -20,7 +20,7 @@ GUIDE = [
             "Accepted formats: JPEG, PNG, TIFF and BMP. Every photo shape works: portrait, landscape, square, panorama...",
             "\"Add folder\" takes every image of the folder (not its subfolders).",
             "Dragging and dropping files and folders onto the list works too.",
-            "Click an entry in the list: the preview on the right shows the photo, or the first photo of a folder. \"Clear selection\" empties the list.",
+            "Click an entry in the list: the preview on the right shows the photo, or the first photo of a folder. To remove one photo: the \u2715 on its row, the Delete key or \"Remove\"; \"Clear all\" empties the list.",
             "Image format: 3:4 (Instagram grid, default), 4:5 (feed), 1:1 (square) or 9:16 (stories, reels). Pick it first: panorama slicing, cropping and backgrounds adapt.",
             "\"Next\" becomes available as soon as there is at least one photo and a destination folder.",
         ]),
@@ -155,6 +155,7 @@ GUIDE = [
     ("shortcuts", "Shortcuts", [
         ("bullets", [
             "F1: open this guide.",
+            "Photo list: Delete removes the selected photo.",
             "Order grid: Delete excludes the selected image; Enter opens it in the adjustments.",
             "Adjust: ← → previous / next image.",
             "Crop editor: arrows move the frame (Shift: faster); Enter applies; Esc cancels.",

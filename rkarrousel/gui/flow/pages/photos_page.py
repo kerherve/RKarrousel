@@ -41,20 +41,25 @@ class PhotosPage(Page):
         buttons.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Button(buttons, text=t("add_files"), command=self.add_files).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(buttons, text=t("add_folder"), command=self.add_folder).pack(side=tk.LEFT, padx=(0, 8))
+        self.remove_button = ttk.Button(buttons, text=t("remove_selected"), command=self.remove_selected)
+        self.remove_button.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(buttons, text=t("clear_selection"), command=self.clear_selection).pack(side=tk.LEFT)
 
         list_frame = ttk.Frame(left)
         list_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        self.listbox = ttk.Treeview(list_frame, show="tree", selectmode="browse", height=6)
+        self.listbox = ttk.Treeview(list_frame, columns=("remove",), show="tree", selectmode="browse", height=6)
         self.listbox.column("#0", stretch=True)
+        self.listbox.column("remove", width=44, stretch=False, anchor=tk.CENTER)  # la croix qui retire la photo
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.listbox.bind("<<TreeviewSelect>>", self.on_list_select)
+        self.listbox.bind("<Button-1>", self.on_list_click, add="+")
+        for key in ("<Delete>", "<BackSpace>"):
+            self.listbox.bind(key, lambda e: self.remove_selected())
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
         scrollbar.pack(side=tk.LEFT, fill=tk.Y)
         self.listbox.configure(yscrollcommand=scrollbar.set)
-        ttk.Label(left, text=t("drop_hint") if DND_FILES else "", style="Hint.TLabel").grid(
-            row=2, column=0, sticky=tk.W, pady=(6, 0)
-        )
+        hint = t("list_hint") if not DND_FILES else f"{t('drop_hint')} {t('list_hint')}"
+        ttk.Label(left, text=hint, style="Hint.TLabel").grid(row=2, column=0, sticky=tk.W, pady=(6, 0))
 
         dest = ttk.LabelFrame(left, text=t("dest_group"), padding=12)
         dest.grid(row=3, column=0, sticky=tk.EW, pady=(14, 0))
@@ -111,6 +116,37 @@ class PhotosPage(Page):
         if folder:
             self.add_paths([folder])
 
+    def remove_entry(self, index: int) -> None:
+        """Retire une photo (ou un dossier) de la liste ; la sélection passe à la suivante."""
+        paths = self.session.selected_paths
+        if not 0 <= index < len(paths):
+            return
+        del paths[index]
+        self.refresh_list()
+        if paths:
+            self.listbox.selection_set(str(min(index, len(paths) - 1)))
+            self.on_list_select(None)
+        else:
+            self.preview.clear()
+        self._update_remove_button()
+
+    def remove_selected(self) -> None:
+        selection = self.listbox.selection()
+        if selection:
+            self.remove_entry(int(selection[0]))
+
+    def on_list_click(self, event) -> Optional[str]:
+        """Clic sur la croix d'une ligne : la photo est retirée."""
+        if self.listbox.identify_region(event.x, event.y) == "cell" and self.listbox.identify_column(event.x) == "#1":
+            row = self.listbox.identify_row(event.y)
+            if row:
+                self.remove_entry(int(row))
+                return "break"
+        return None
+
+    def _update_remove_button(self) -> None:
+        self.remove_button.state(["!disabled"] if self.listbox.selection() else ["disabled"])
+
     def clear_selection(self) -> None:
         self.session.clear()
         self.listbox.delete(*self.listbox.get_children())
@@ -129,13 +165,15 @@ class PhotosPage(Page):
                 unique.append(path)
         self.session.selected_paths = unique
         for index, path in enumerate(unique):
-            self.listbox.insert("", tk.END, iid=str(index), text=f"  {path}")
+            self.listbox.insert("", tk.END, iid=str(index), text=f"  {path}", values=("✕",))
+        self._update_remove_button()
         self._changed()
 
     def on_list_select(self, event) -> None:
         selection = self.listbox.selection()
         if selection:
             self.preview.show_entry(self.session.selected_paths[int(selection[0])])
+        self._update_remove_button()
 
     # ------------------------------------------------------------------ destination
     def choose_dest(self) -> None:

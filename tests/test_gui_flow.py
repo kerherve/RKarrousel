@@ -85,6 +85,40 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(self.app.flow.pages["photos"].listbox.selection(), ("0",))
         self.assertIn("a_p34.jpg", self.app.flow.pages["photos"].preview.info.get())
 
+    def test_a_single_photo_can_be_removed_with_the_button_the_key_and_the_cross(self):
+        page = self.app.flow.pages["photos"]
+        names = [str(p) for p in self.photos]
+        page.add_paths(names)
+        self.root.update()
+        self.assertIn("disabled", page.remove_button.state()) if not page.listbox.selection() else None
+        page.listbox.selection_set("1")
+        page.on_list_select(None)
+        page.remove_selected()  # bouton « Retirer »
+        self.assertEqual(self.app.ctx.session.selected_paths, [names[0], names[2]])
+        self.assertEqual(len(page.listbox.get_children()), 2)
+        self.assertEqual(page.listbox.selection(), ("1",))  # la sélection passe à la suivante
+        self.assertIn("c_sq.jpg", self.app.flow.pages["photos"].preview.info.get())
+        self.assertTrue(page.listbox.bind("<Delete>") and page.listbox.bind("<BackSpace>"))  # touches Suppr et Retour arrière
+        page.remove_selected()  # ce que fait la touche (le clavier dépend du focus de l'écran, variable selon les machines)
+        self.assertEqual(self.app.ctx.session.selected_paths, [names[0]])
+        x0, y0, width, height = page.listbox.bbox("0", "#1")  # croix de la ligne
+        page.listbox.event_generate("<Button-1>", x=x0 + width // 2, y=y0 + height // 2)
+        self.root.update()
+        self.assertEqual(self.app.ctx.session.selected_paths, [])
+        self.assertEqual(len(page.listbox.get_children()), 0)
+        self.assertIn("disabled", page.remove_button.state())
+        self.assertIn("photo", self.app.flow.nav.hint.cget("text"))  # plus rien à traiter : « Suivant » est bloqué
+
+    def test_removing_a_photo_removes_its_images_from_the_grid(self):
+        page = self.app.flow.pages["photos"]
+        page.add_paths([str(p) for p in self.photos[:2]])
+        window = self.open_order_window(self.photos[:0])  # étape Ordre avec les deux photos déjà ajoutées
+        self.assertEqual(len(window.tiles), 1 + 4)
+        self.app.flow.go(0)
+        page.remove_entry(1)  # on retire le paysage 3:2
+        self.app.flow.go(1)
+        self.pump(lambda: len(self.app.flow.order_view.tiles) == 1)
+
     def test_adding_a_folder_previews_its_first_image(self):
         self.app.flow.pages["photos"].add_paths([str(self.dir)])
         self.assertIn("a_p34.jpg", self.app.flow.pages["photos"].preview.info.get())

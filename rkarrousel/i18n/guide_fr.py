@@ -25,7 +25,7 @@ GUIDE = [
             "Formats acceptés : JPEG, PNG, TIFF et BMP. Tous les formats de photo vont : portrait, paysage, carré, panorama…",
             "« Ajouter dossier » prend toutes les images du dossier (sans ses sous-dossiers).",
             "Le glisser-déposer de fichiers et de dossiers dans la liste fonctionne aussi.",
-            "Cliquez une entrée de la liste : l'aperçu à droite montre la photo, ou la première photo d'un dossier. « Effacer la sélection » vide la liste.",
+            "Cliquez une entrée de la liste : l'aperçu à droite montre la photo, ou la première photo d'un dossier. Pour retirer une photo : la croix ✕ de sa ligne, la touche Suppr ou « Retirer » ; « Tout effacer » vide la liste.",
             "Format des images : 3:4 (grille Instagram, par défaut), 4:5 (feed), 1:1 (carré) ou 9:16 (stories, reels). Choisissez-le d'abord : le découpage des panoramas, le recadrage et les fonds s'adaptent.",
             "Le bouton « Suivant » s'active dès qu'il y a au moins une photo et un dossier de destination.",
         ]),
@@ -160,6 +160,7 @@ GUIDE = [
     ("shortcuts", "Raccourcis", [
         ("bullets", [
             "F1 : ouvrir ce guide.",
+            "Liste des photos : Suppr retire la photo sélectionnée.",
             "Grille d'ordre : Suppr exclut l'image sélectionnée ; Entrée l'ouvre dans les ajustements.",
             "Ajustements : ← → image précédente / suivante.",
             "Éditeur de recadrage : ↑ ↓ ← → déplacent le cadre (Maj : plus vite) ; Entrée valide ; Échap annule.",
