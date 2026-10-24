@@ -4,6 +4,18 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.11.3
+
+### English
+
+- The update window shows the release notes in the app's language (English or French) instead of both.
+- Release notes are written in English and French.
+
+### Français
+
+- La fenêtre de mise à jour affiche les nouveautés dans la langue de l'appli (français ou anglais), et non plus les deux.
+- Les notes de version sont écrites en anglais et en français.
+
 ## v0.11.2
 
 ### English
