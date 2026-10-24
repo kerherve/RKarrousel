@@ -36,6 +36,35 @@ class StyleTests(unittest.TestCase):
         self.assertLess(colors.luminance(colors.styled_color((230, 220, 200), "contrast")), 0.15)
 
 
+class TweakTests(unittest.TestCase):
+    def test_no_tweak_changes_nothing(self):
+        self.assertEqual(colors.tweak_color((10, 120, 200)), (10, 120, 200))
+
+    def test_each_axis_moves_the_colour_in_its_own_direction(self):
+        base = (100, 140, 180)
+        lighter = colors.tweak_color(base, lightness=0.1)
+        self.assertGreater(colors.luminance(lighter), colors.luminance(base))
+        h0, l0, s0 = colorsys.rgb_to_hls(*(c / 255 for c in base))
+        h1, _, _ = colorsys.rgb_to_hls(*(c / 255 for c in colors.tweak_color(base, hue=20)))
+        self.assertNotAlmostEqual(h0, h1, places=2)
+        _, _, s_up = colorsys.rgb_to_hls(*(c / 255 for c in colors.tweak_color(base, saturation=0.2)))
+        self.assertGreater(s_up, s0)
+
+    def test_the_tweak_is_read_clamped_and_validated(self):
+        self.assertEqual(conf.border_tweak_of({}), (0.0, 0.0, 0.0))
+        self.assertEqual(conf.border_tweak_of({"border_tweak": [999, -999, 0.1]}), (30.0, -0.3, 0.1))
+        self.assertEqual(conf.border_tweak_of({"border_tweak": "x"}), (0.0, 0.0, 0.0))
+        self.assertEqual(conf.border_tweak_of({"border_tweak": [1, 2]}), (0.0, 0.0, 0.0))
+
+    def test_resolved_colour_includes_the_tweak_only_for_photo_colours(self):
+        img = Image.new("RGB", (200, 200), (60, 110, 190))
+        plain = colors.resolve_photo_colors(img, {"border_color_mode": "dominant"})["border_color"]
+        tweaked = colors.resolve_photo_colors(img, {"border_color_mode": "dominant", "border_tweak": [0, 0, 0.15]})["border_color"]
+        self.assertNotEqual(plain, tweaked)
+        fixed = colors.resolve_photo_colors(img, {"border_color_mode": "fixed", "border_color": "#123456", "border_tweak": [0, 0, 0.15]})
+        self.assertEqual(fixed["border_color"], "#123456")  # une couleur fixe n'est pas retouchée
+
+
 class SourceTests(unittest.TestCase):
     def photo(self):
         img = Image.new("RGB", (400, 300), (20, 40, 200))  # centre bleu…
@@ -105,6 +134,15 @@ class PerPhotoTests(unittest.TestCase):
         self.assertEqual(conf.photo_override_for(cfg, "x.jpg"), {"border_color": "#00FF00"})
         self.assertEqual(conf.config_for_photo(cfg, "other.jpg"), cfg)
         self.assertEqual(conf.photo_override_for({"photo_overrides": "garbage"}, "x.jpg"), {})
+
+    def test_a_tweak_alone_refines_one_photo_and_keeps_the_general_mode(self):
+        self.config["border_color_mode"] = "dominant"
+        self.config["photo_overrides"] = {str(self.a): {"border_tweak": [0, 0, 0.15]}}
+        base = {k: v for k, v in self.config.items() if k != "photo_overrides"}
+        same = produce.render_output(self.b, self.config, "framed").convert("RGB").getpixel((3, 3))
+        self.assertEqual(same, produce.render_output(self.b, base, "framed").convert("RGB").getpixel((3, 3)))
+        refined = self.frame_pixel(self.a)
+        self.assertNotEqual(refined, produce.render_output(self.a, base, "framed").convert("RGB").getpixel((3, 3)))
 
     def test_override_with_a_photo_mode(self):
         self.config["photo_overrides"][str(self.a)] = {"border_color_mode": "contrast", "border_color": "#000000"}

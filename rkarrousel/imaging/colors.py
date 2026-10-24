@@ -6,7 +6,7 @@ from typing import Tuple
 
 from PIL import Image, ImageStat
 
-from rkarrousel.config import color_mode_of, color_source_of
+from rkarrousel.config import border_tweak_of, color_mode_of, color_source_of
 
 Color = Tuple[int, int, int]
 LIGHT_MIX = 0.65   # part de blanc de la variante claire
@@ -87,6 +87,16 @@ def styled_color(color: Color, style: str) -> Color:
     return color
 
 
+def tweak_color(color: Color, hue: float = 0.0, saturation: float = 0.0, lightness: float = 0.0) -> Color:
+    """Retouche fine : décale la teinte (en degrés), la saturation et la clarté (en fraction), pour affiner à l'œil."""
+    if not (hue or saturation or lightness):
+        return color
+    h, light, sat = colorsys.rgb_to_hls(*(c / 255 for c in color))
+    r, g, b = colorsys.hls_to_rgb((h + hue / 360) % 1.0, min(1.0, max(0.0, light + lightness)),
+                                  min(1.0, max(0.0, sat + saturation)))
+    return (round(r * 255), round(g * 255), round(b * 255))
+
+
 def to_hex(color: Color) -> str:
     return "#%02X%02X%02X" % color
 
@@ -101,7 +111,10 @@ def resolve_photo_colors(img: Image.Image, config: dict) -> dict:
     resolved = dict(config)
     for key, mode in modes.items():
         if mode != "fixed":
-            resolved[key] = to_hex(styled_color(reference, mode))
+            color = styled_color(reference, mode)
+            if key == "border_color":
+                color = tweak_color(color, *border_tweak_of(config))  # retouche fine du cadre, à la main
+            resolved[key] = to_hex(color)
     return resolved
 
 

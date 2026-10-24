@@ -269,8 +269,15 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(self.app.ctx.config["photo_overrides"][key]["border_color_mode"], "contrast")
         self.pump(lambda: viewer.generation == 1 and viewer.settings_changed and "px" in viewer.info.get())
         self.assertEqual(self.app.model.border_color_mode.get(), "fixed")  # le réglage général n'a pas bougé
+        self.assertRegex(group.resolved_text.cget("text"), r"^#[0-9A-F]{6}$")  # la couleur obtenue est affichée
+        before = group.resolved_text.cget("text")
+        group.tweaks[2].set(0.5)  # retouche fine : un peu plus clair
+        self.pump(lambda: "border_tweak" in self.app.ctx.config["photo_overrides"].get(key, {}))
+        self.assertGreater(self.app.ctx.config["photo_overrides"][key]["border_tweak"][2], 0)
+        self.pump(lambda: viewer.generation >= 2 and group.resolved_text.cget("text") != before)
+        group.reset_tweak()
         group.mode.set("global")
-        self.assertNotIn(key, self.app.ctx.config["photo_overrides"])
+        self.pump(lambda: key not in self.app.ctx.config["photo_overrides"])
         viewer.close()
 
     def _find(self, widget, cls):

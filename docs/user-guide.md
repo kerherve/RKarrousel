@@ -150,7 +150,7 @@ On a "crop" image, "Crop..." opens the editor:
 - Right-click + drag: a ruler that measures in pixels, for example the frame thickness.
 - The frame thickness is also measured automatically and shown at the top.
 - "Settings" panel on the right: frame thickness and colour, background (solid or blurred), signature, colours taken from the photo. What the displayed image does not use is greyed out: a panorama slice or a crop has neither background nor signature. The image is recomputed after each change, without going back to the Settings tab; the "Settings" button hides or shows the panel.
-- "This photo's frame": a frame colour specific to the displayed photo (fixed, or taken from the photo) that replaces the general setting for that photo only. "Same as the general settings" cancels it. The choice is kept from one session to the next.
+- "This photo's frame": a frame colour specific to the displayed photo (fixed, or taken from the photo) that replaces the general setting for that photo only. "Same as the general settings" cancels it. "Resulting colour" shows the colour actually computed for this photo; three "Fine-tune" sliders (hue, saturation, lightness) adjust it very slightly, by eye, for this photo only. "Reset" puts them back to zero. The choice is kept from one session to the next.
 - The rest of the panel reuses the Settings tab: those apply to all photos, and the grid updates when you close the viewer.
 
 

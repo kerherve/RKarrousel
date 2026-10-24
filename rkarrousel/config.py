@@ -23,7 +23,8 @@ COLOR_MODES = ("fixed", "dominant", "light", "dark", "complement", "contrast")
 DEFAULT_COLOR_MODE = "fixed"
 COLOR_SOURCES = ("dominant", "edges", "average")  # d'où vient la couleur de référence d'une photo
 DEFAULT_COLOR_SOURCE = "dominant"
-PHOTO_OVERRIDE_KEYS = ("border_color", "border_color_mode")  # réglages qu'on peut fixer photo par photo
+PHOTO_OVERRIDE_KEYS = ("border_color", "border_color_mode", "border_tweak")  # réglages qu'on peut fixer photo par photo
+TWEAK_LIMITS = (30.0, 0.3, 0.2)  # retouche fine de la couleur : teinte (± degrés), saturation et clarté (± fraction)
 DEFAULT_BLUR_STRENGTH = 1.0
 DEFAULT_JPEG_QUALITY = 100
 DEFAULT_SIGNATURE_POSITION = "bottom-right"
@@ -114,6 +115,17 @@ def color_source_of(config: dict) -> str:
     """Source de la couleur de référence des modes « tirée de la photo »."""
     source = config.get("color_source", DEFAULT_COLOR_SOURCE)
     return source if source in COLOR_SOURCES else DEFAULT_COLOR_SOURCE
+
+
+def border_tweak_of(config: dict) -> Tuple[float, float, float]:
+    """Retouche fine (teinte, saturation, clarté) de la couleur du cadre tirée de la photo ; (0, 0, 0) si absente."""
+    value = config.get("border_tweak")
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return (0.0, 0.0, 0.0)
+    try:
+        return tuple(max(-limit, min(limit, float(v))) for v, limit in zip(value, TWEAK_LIMITS))  # type: ignore[return-value]
+    except (TypeError, ValueError):
+        return (0.0, 0.0, 0.0)
 
 
 def photo_override_for(config: dict, path) -> dict:

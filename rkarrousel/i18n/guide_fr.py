@@ -119,7 +119,7 @@ GUIDE = [
             "Clic droit + glisser : règle qui mesure en pixels, par exemple l'épaisseur du cadre.",
             "L'épaisseur du cadre est aussi mesurée automatiquement et affichée en haut.",
             "Panneau « Réglages » à droite : épaisseur et couleur du cadre, fond (uni ou flou), signature, couleurs tirées de la photo. Ce que l'image affichée n'utilise pas est grisé : une tranche de panorama ou un recadrage n'a ni fond ni signature. L'image se recalcule après chaque changement, sans retourner dans l'onglet Réglages ; le bouton « Réglages » masque ou affiche le panneau.",
-            "« Cadre de cette photo » : une couleur de cadre propre à la photo affichée (fixe, ou tirée de la photo), qui remplace le réglage général pour elle seule. « Comme les réglages généraux » l'annule. Le choix est conservé d'une session à l'autre.",
+            "« Cadre de cette photo » : une couleur de cadre propre à la photo affichée (fixe, ou tirée de la photo), qui remplace le réglage général pour elle seule. « Comme les réglages généraux » l'annule. « Couleur obtenue » montre la couleur réellement calculée pour cette photo ; trois curseurs « Affiner » (teinte, saturation, clarté) la retouchent très légèrement, à l'œil, pour cette photo seulement. « Réinitialiser » les remet à zéro. Le choix est conservé d'une session à l'autre.",
             "Le reste du panneau reprend les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos, et la grille se met à jour à la fermeture.",
         ]),
     ]),

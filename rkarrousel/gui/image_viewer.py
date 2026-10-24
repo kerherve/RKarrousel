@@ -74,7 +74,6 @@ class ImageViewer(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
         threading.Thread(target=self._load, args=(self.generation, dict(config)), daemon=True).start()
         self.after(80, self._poll)
-        self.after(50, self._draw_nav)  # une fois la fenêtre dimensionnée
         self._update_position()
 
     # ------------------------------------------------------------------ UI
@@ -230,6 +229,8 @@ class ImageViewer(tk.Toplevel):
         assert self.image is not None
         width, height = self.image.size
         config = resolve_photo_colors_for_path(self.source, config_for_photo(self.config_snapshot, self.source))  # couleurs « de la photo » comprises
+        if self.side is not None:
+            self.photo_group.show_resolved(border_color_of(config))
         border = measure_border(self.image, border_color_of(config), skip_color=background_color_of(config))
         if border:
             percent = 100 * border / min(width, height)
