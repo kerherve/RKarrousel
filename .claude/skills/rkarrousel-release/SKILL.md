@@ -9,6 +9,14 @@ Every new release (git tag `vX.Y.Z`) requires a freshly built `RKarrousel.exe`
 built from the tagged commit. Never reuse an old `dist/RKarrousel.exe`.
 No `Co-Authored-By` lines in commits (user preference).
 
+## Always: a refactoring step after every implementation
+After implementing ANY feature or fix, and before handing it back or releasing, do a refactoring pass (the user insists on it):
+- `wc -l` the files you touched; split anything that grew past ~300 lines or mixes several roles (pure logic without Tk in its own module, tested without a display);
+- keep the directories thematic (`gui/flow/`, `gui/viewer/`, `gui/order/`, `gui/settings_groups/`…), remove dead code and unused i18n keys;
+- update `docs/architecture.md`, the user guide (`rkarrousel/i18n/guide_*.py`, then `python tools/build_docs.py`) and the tests;
+- check the default renders are still pixel-identical (baseline hashes) unless the change is meant to alter them.
+Mention what was refactored in the report to the user.
+
 ## Versioning (semver, currently 0.x)
 - `0.MINOR.0` for new features, `0.x.PATCH` for fixes. Go to `1.0.0` when the app is considered stable.
 - Last release: check `git tag --sort=-v:refname | head -1`.
@@ -29,6 +37,7 @@ different `rkarrousel/version.py` values, a local fake GitHub (`RKARROUSEL_UPDAT
 `RKarrousel.exe --self-update log.txt`. NEVER stop test processes by name on the user's machine (see memory).
 
 ## Steps
+0. Refactoring pass done (see above): file sizes, architecture, docs, guide, tests.
 1. Make sure the work is committed and pushed on `master` (`git status` clean apart from ignored/untracked build output)
    and that `python3 -m unittest discover -s tests -t .` passes.
 2. Pick the next version, set `__version__` in `rkarrousel/version.py` (shown in the GUI title and the "À propos" dialog), commit and push it, then create an annotated tag on that commit: `git tag -a vX.Y.Z -m "vX.Y.Z - summary"`. The tag must never be created before the version bump.
