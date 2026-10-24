@@ -49,6 +49,31 @@ class GridCanvas(tk.Canvas):
         self.bind("<MouseWheel>", lambda e: self.yview_scroll(-1 if e.delta > 0 else 1, "units"))
         self.bind("<Button-4>", lambda e: self.yview_scroll(-2, "units"))
         self.bind("<Button-5>", lambda e: self.yview_scroll(2, "units"))
+        self._fit_job = None
+        self.bind("<Configure>", self._on_configure)
+        self.bind("<Destroy>", lambda e: self._cancel_fit() if e.widget is self else None, add="+")
+
+    # ------------------------------------------------------------------ taille de la fenêtre
+    def _cancel_fit(self) -> None:
+        if self._fit_job is not None:
+            try:
+                self.after_cancel(self._fit_job)
+            except tk.TclError:
+                pass
+            self._fit_job = None
+
+    def _on_configure(self, event) -> None:
+        """La fenêtre change de taille : les vignettes s'agrandissent pour garder les trois colonnes pleine largeur
+        (on attend la fin du geste pour ne pas tout redessiner à chaque pixel)."""
+        self._cancel_fit()
+        self._fit_job = self.after(120, lambda: self.fit_to_width(event.width))
+
+    def fit_to_width(self, width: int) -> None:
+        self._fit_job = None
+        if self.layout.fit_width(width):
+            for tile in self.model.tiles:
+                tile.photo = None  # les images affichées dépendent de la taille des cases
+            self.redraw()
 
     # ------------------------------------------------------------------ dessin
     def redraw(self) -> None:

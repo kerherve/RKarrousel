@@ -41,7 +41,7 @@ class OrderWindow(tk.Toplevel):
         self.settings_ctx = settings_ctx  # contexte de l'appli : la visionneuse y règle cadre et fond
         self.layout = GridLayout(scale, output_format_of(config))
         self.model = OrderModel(files, excluded)
-        self.thumbs = ThumbnailService(cache, (self.layout.tile_w * 2, self.layout.tile_h * 2))  # marge pour un affichage net
+        self.thumbs = ThumbnailService(cache, self.layout.max_thumb_size())  # assez grandes pour une fenêtre très large
         self._closing = False
 
         self.title(t("order_title"))
@@ -75,7 +75,9 @@ class OrderWindow(tk.Toplevel):
         self.view_btn = ttk.Button(toolbar, text=t("order_view"), command=self.view_selected)
         self.view_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
-        ttk.Label(frame, text=t("order_hint"), justify=tk.LEFT, wraplength=layout.canvas_width).pack(fill=tk.X)
+        hint = ttk.Label(frame, text=t("order_hint"), justify=tk.LEFT, wraplength=layout.canvas_width)
+        hint.pack(fill=tk.X)
+        hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(200, e.width - 4)))  # suit la largeur de la fenêtre
         self.status = tk.StringVar(value="")
         ttk.Label(frame, textvariable=self.status, style="Hint.TLabel").pack(fill=tk.X, pady=(4, 8))
 

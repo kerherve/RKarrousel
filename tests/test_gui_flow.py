@@ -209,6 +209,16 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(len(names), 3)
         self.assertEqual([n[:2] for n in names], ["01", "02", "03"])
 
+    def test_order_grid_grows_with_the_window(self):
+        window = self.open_order_window(self.photos[:2])
+        self.root.update()
+        base = window.layout.tile_w
+        window.geometry("1500x900")
+        self.pump(lambda: window.layout.tile_w > base)
+        self.assertEqual(window.grid_canvas.layout.tile_w, window.layout.tile_w)
+        window.geometry("700x900")
+        self.pump(lambda: window.layout.tile_w < 400)
+
     def test_viewer_adjusts_frame_and_fill_live_and_refreshes_the_grid(self):
         from rkarrousel.gui import image_viewer
 

@@ -6,15 +6,36 @@ BASE_TILE_W = 210
 BASE_GAP = 4
 
 
+MAX_TILE_W = 900  # largeur maximale d'une vignette (pixels à 96 ppp) : taille des miniatures conservées
+
+
 class GridLayout:
-    """Positions des vignettes (3 colonnes, comme la grille d'un profil Instagram) à l'échelle de l'écran."""
+    """Positions des vignettes (3 colonnes, comme la grille d'un profil Instagram) à l'échelle de l'écran.
+    Les trois colonnes restent trois, mais les vignettes grandissent avec la fenêtre (`fit_width`)."""
 
     def __init__(self, scale: float, target: Tuple[int, int]):
         tw, th = target  # les vignettes ont le format de sortie choisi
         self.scale = scale
-        self.tile_w = int(BASE_TILE_W * scale)
-        self.tile_h = int(BASE_TILE_W * scale * th / tw)
+        self.ratio = th / tw
+        self.min_tile_w = int(BASE_TILE_W * scale)
+        self.tile_w = self.min_tile_w
+        self.tile_h = int(self.tile_w * self.ratio)
         self.gap = max(2, int(BASE_GAP * scale))
+
+    def fit_width(self, width: int) -> bool:
+        """Ajuste la taille des vignettes pour que les trois colonnes occupent `width` pixels (jamais moins que la
+        taille de base). Renvoie True si la taille a changé."""
+        tile_w = max(self.min_tile_w, (width - (COLUMNS + 1) * self.gap) // COLUMNS)
+        if tile_w == self.tile_w:
+            return False
+        self.tile_w = tile_w
+        self.tile_h = int(tile_w * self.ratio)
+        return True
+
+    def max_thumb_size(self) -> Tuple[int, int]:
+        """Taille maximale des miniatures : celle d'une vignette dans une fenêtre très large."""
+        width = int(MAX_TILE_W * self.scale)
+        return width, int(width * self.ratio)
 
     @property
     def canvas_width(self) -> int:

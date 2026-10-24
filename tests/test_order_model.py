@@ -84,6 +84,23 @@ class OrderModelTests(unittest.TestCase):
 
 
 class GridLayoutTests(unittest.TestCase):
+    def test_tiles_grow_with_the_window_but_stay_three_columns(self):
+        layout = GridLayout(1.0, (3, 4))
+        base = layout.tile_w
+        self.assertFalse(layout.fit_width(100))  # jamais plus petit que la taille de base
+        self.assertEqual(layout.tile_w, base)
+        self.assertTrue(layout.fit_width(1500))
+        self.assertGreater(layout.tile_w, base)
+        self.assertLessEqual(layout.canvas_width, 1500)
+        self.assertGreaterEqual(layout.canvas_width, 1500 - COLUMNS)  # les trois colonnes remplissent la largeur
+        self.assertAlmostEqual(layout.tile_h / layout.tile_w, 4 / 3, places=2)
+        self.assertEqual(layout.tile_at(layout.slot_origin(5)[0] + 1, layout.slot_origin(5)[1] + 1, 9), 5)
+        self.assertFalse(layout.fit_width(1500))  # même largeur : rien à refaire
+
+    def test_thumbnails_are_large_enough_for_a_wide_window(self):
+        layout = GridLayout(1.0, (3, 4))
+        self.assertGreaterEqual(layout.max_thumb_size()[0], 800)
+
     def test_tile_shape_follows_the_output_format(self):
         self.assertAlmostEqual(GridLayout(1.0, (3, 4)).tile_h / GridLayout(1.0, (3, 4)).tile_w, 4 / 3, places=2)
         self.assertEqual(GridLayout(1.0, (1, 1)).tile_h, GridLayout(1.0, (1, 1)).tile_w)

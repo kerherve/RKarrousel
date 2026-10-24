@@ -124,6 +124,7 @@ Settings -> "Generated files":
 
 The "Preview and order..." button shows the final rendering of every image in a three-column grid, like an Instagram profile.
 
+- The window can be enlarged: the grid keeps its three columns (like an Instagram profile) and the images grow to fill the width.
 - Drag an image to move it: the pieces of one photo can be separated.
 - The blue number is the one that will prefix the file (see "File numbering").
 - The cross at the top right of an image excludes it (it is neither generated nor numbered); the undo arrow brings it back.

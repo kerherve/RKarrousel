@@ -95,6 +95,7 @@ GUIDE = [
     ("order", "Aperçu et ordre", [
         ("p", "Le bouton « Aperçu et ordre… » affiche le rendu final de chaque image dans une grille de trois colonnes, comme un profil Instagram."),
         ("bullets", [
+            "La fenêtre peut être agrandie : la grille garde ses trois colonnes (comme un profil Instagram) et les images grandissent pour remplir la largeur.",
             "Glissez une image pour la déplacer : les morceaux d'une même photo peuvent être séparés.",
             "Le numéro bleu est celui qui préfixera le fichier (voir « Numérotation des fichiers »).",
             "La croix en haut à droite d'une image l'exclut (elle n'est ni générée ni numérotée) ; ↺ la réintègre.",
