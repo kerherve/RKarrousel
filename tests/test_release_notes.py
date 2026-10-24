@@ -30,6 +30,21 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(plain_notes(raw), "Nouveautés\n\n• Gras et code\n• autre")
         self.assertEqual(plain_notes("**Full Changelog**: https://x"), "")
 
+    def test_plain_notes_keeps_only_the_wanted_language(self):
+        raw = "### English\n\n- Hello\n\n### Français\n\n- Bonjour"
+        self.assertEqual(plain_notes(raw, "fr"), "\u2022 Bonjour")
+        self.assertEqual(plain_notes(raw, "en"), "\u2022 Hello")
+        self.assertEqual(plain_notes(raw, "de"), "\u2022 Hello")  # langue inconnue : anglais
+        self.assertEqual(plain_notes("- seul", "fr"), "\u2022 seul")  # notes sans parties par langue
+
+    def test_every_changelog_section_has_both_languages(self):
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        for version in re.findall(r"^## (v[\d.]+)$", text, re.M):
+            body = section_for(version, text)
+            self.assertIn("### English", body, version)
+            self.assertIn("### Français", body, version)
+            self.assertLess(body.index("### English"), body.index("### Français"), version)
+
 
 if __name__ == "__main__":
     unittest.main()

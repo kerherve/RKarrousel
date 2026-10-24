@@ -50,11 +50,16 @@ def is_newer(candidate: str, current: str) -> bool:
     return bool(new) and new > old
 
 
-def plain_notes(markdown: str) -> str:
-    """Notes de release en texte simple pour la fenêtre de mise à jour : sans balises Markdown, puces « • »,
-    et sans la ligne « Full Changelog » que GitHub ajoute seule (un simple lien de comparaison)."""
+LANGUAGE_HEADINGS = {"en": "English", "fr": "Français"}
+
+
+def plain_notes(markdown: str, language: str = None) -> str:
+    """Notes de release en texte simple pour la fenêtre de mise à jour : sans balises Markdown, puces « • », sans
+    la ligne « Full Changelog » que GitHub ajoute seule. Si les notes ont une partie `### English` et une partie
+    `### Français`, seule celle de `language` est gardée (l'anglais à défaut)."""
+    markdown = _pick_language(markdown.replace("\r\n", "\n"), language)
     lines = []
-    for raw in markdown.replace("\r\n", "\n").split("\n"):
+    for raw in markdown.split("\n"):
         line = raw.strip().replace("**", "").replace("__", "").replace("`", "")
         if not line and (not lines or not lines[-1]):
             continue
@@ -65,6 +70,22 @@ def plain_notes(markdown: str) -> str:
             line = "\u2022 " + line[2:]
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+def _pick_language(markdown: str, language: str = None) -> str:
+    parts, current = {}, "common"
+    for line in markdown.split("\n"):
+        title = line[4:].strip() if line.startswith("### ") else None
+        if title in LANGUAGE_HEADINGS.values():
+            current = title
+            parts.setdefault(current, [])
+            continue
+        parts.setdefault(current, []).append(line)
+    wanted = LANGUAGE_HEADINGS.get(language or "", "English")
+    if wanted not in parts and "English" not in parts:
+        return markdown  # notes sans parties par langue (ou générées par GitHub) : telles quelles
+    chosen = parts.get(wanted) or parts.get("English", [])
+    return "\n".join(parts.get("common", []) + chosen)
 
 
 @dataclass
@@ -107,7 +128,7 @@ def fetch_latest_release(repo: str = REPO, api: str = API_URL, timeout: float = 
             return ReleaseInfo(
                 version=version,
                 tag=tag,
-                notes=plain_notes(str(data.get("body") or "")),
+                notes=str(data.get("body") or "").strip(),
                 asset_name=asset["name"],
                 asset_url=str(asset.get("browser_download_url", "")),
                 size=int(asset.get("size") or 0),

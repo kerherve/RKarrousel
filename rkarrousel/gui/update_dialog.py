@@ -4,7 +4,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from rkarrousel.i18n import t
+from rkarrousel.i18n import get_language, t
+from rkarrousel.services.updater import plain_notes
 
 
 class UpdateDialog(tk.Toplevel):
@@ -39,7 +40,7 @@ class UpdateDialog(tk.Toplevel):
         self.notes = tk.Text(box, wrap=tk.WORD, height=8, relief=tk.FLAT, borderwidth=0, padx=8, pady=6, font=("Segoe UI", 10))
         scroll = ttk.Scrollbar(box, orient=tk.VERTICAL, command=self.notes.yview)
         self.notes.configure(yscrollcommand=scroll.set)
-        self.notes.insert("1.0", info.notes or t("upd_no_notes"))
+        self.notes.insert("1.0", plain_notes(info.notes, get_language()) or t("upd_no_notes"))
         self.notes.configure(state=tk.DISABLED)
         self.notes.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.LEFT, fill=tk.Y)

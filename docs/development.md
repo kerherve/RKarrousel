@@ -52,7 +52,7 @@ L'installateur : `ISCC.exe /DAppVersion=X.Y.Z installer\RKarrousel.iss` → `dis
 
 ## Publier une version
 
-1. Mettre `rkarrousel/version.py` à jour (semver : `0.MINOR.0` pour une fonctionnalité, `0.x.PATCH` pour un correctif) et ajouter en tête de `CHANGELOG.md` une section `## vX.Y.Z` écrite pour l'utilisateur : elle devient le texte de la release et s'affiche dans la fenêtre de mise à jour (un test vérifie qu'elle existe).
+1. Mettre `rkarrousel/version.py` à jour (semver : `0.MINOR.0` pour une fonctionnalité, `0.x.PATCH` pour un correctif) et ajouter en tête de `CHANGELOG.md` une section `## vX.Y.Z` écrite pour l'utilisateur **dans les deux langues** (`### English` puis `### Français`) : elle devient le texte de la release et s'affiche dans la fenêtre de mise à jour (un test vérifie qu'elle existe).
 2. Fusionner dans `master`, puis pousser un tag `vX.Y.Z` égal à la version.
 3. Le workflow `.github/workflows/release.yml` exécute les tests, compile l'exécutable, vérifie son démarrage, fabrique
    l'installateur, teste une installation et une désinstallation silencieuses, puis ajoute à la release
