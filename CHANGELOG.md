@@ -4,6 +4,18 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.13.1
+
+### English
+
+- New logo: three framed photos, like a carousel. It is the icon of the windows, of the executable and of the installer, and it appears in the app's header.
+- Photos step: you can now remove a single photo from the list, with the cross at the end of its row, the Delete key or the "Remove" button. "Clear selection" is now called "Clear all".
+
+### Français
+
+- Nouveau logo : trois photos encadrées, comme un carrousel. C'est l'icône des fenêtres, de l'exécutable et de l'installateur, et il apparaît dans l'en-tête de l'appli.
+- Étape Photos : on peut maintenant retirer une seule photo de la liste, avec la croix au bout de sa ligne, la touche Suppr ou le bouton « Retirer ». « Effacer la sélection » s'appelle désormais « Tout effacer ».
+
 ## v0.13.0
 
 ### English
