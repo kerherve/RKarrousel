@@ -190,6 +190,7 @@ STRINGS = {
     "guide": "Guide",
     "guide_title": "User guide",
     "guide_topics": "Topics",
+    "viewer_not_applicable": "not applicable to this image",
     "viewer_settings": "Settings",
     "viewer_settings_hint": "These are the settings of the Settings tab: they apply to all photos. The image is recomputed after each change.",
     "order_title": "Preview and image order",

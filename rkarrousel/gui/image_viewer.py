@@ -12,13 +12,14 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
-from rkarrousel.gui.settings_groups import FillGroup, FrameGroup
+from rkarrousel.gui.settings_groups import FillGroup, FrameGroup, SignatureGroup
 from rkarrousel.gui.widgets import bind_trace
 from rkarrousel.i18n import kind_label, t
 from rkarrousel.imaging.colors import resolve_photo_colors_for_path
 from rkarrousel.config import background_color_of, border_color_of
 from rkarrousel.imaging.frames import measure_border
-from rkarrousel.outputs import render_output
+from rkarrousel.outputs import kind_features, render_output
+from rkarrousel.pipeline import peek_size
 
 MIN_SCALE = 0.02
 MAX_SCALE = 32.0
@@ -120,15 +121,28 @@ class ImageViewer(tk.Toplevel):
         model = self.ctx.model
         side = ttk.Frame(parent, width=int(360 * self.scale_ui))
         FrameGroup(side, self.ctx).pack(fill=tk.X)
-        FillGroup(side, self.ctx).pack(fill=tk.X, pady=(10, 0))
+        features = self._features()
+        fill = self.fill_group = FillGroup(side, self.ctx)
+        signature = self.signature_group = SignatureGroup(side, self.ctx)
+        fill.pack(fill=tk.X, pady=(10, 0))
+        signature.pack(fill=tk.X, pady=(10, 0))
+        fill.set_applicable("fill" in features)  # ce que l'image affichée n'utilise pas est grisé
+        signature.set_applicable("signature" in features)
         ttk.Label(side, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(340 * self.scale_ui),
                   justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
         for variable in (
             model.frame_percent, model.no_frame, model.border_color, model.border_color_mode,
             model.landscape_fill_mode, model.background_color, model.background_color_mode, model.blur_strength,
+            model.signature_path, model.signature_position, model.signature_scale,
         ):
             bind_trace(side, variable, self._schedule_rerender)
         return side
+
+    def _features(self) -> frozenset:
+        try:
+            return kind_features(*peek_size(self.source), self.kind, self.config_snapshot)
+        except Exception:
+            return frozenset({"fill", "signature"})  # illisible : on ne grise rien
 
     def toggle_settings(self) -> None:
         if self.side.winfo_ismapped():

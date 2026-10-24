@@ -190,6 +190,7 @@ STRINGS = {
     "guide": "Guide",
     "guide_title": "Guide d'utilisation",
     "guide_topics": "Rubriques",
+    "viewer_not_applicable": "non applicable à cette image",
     "viewer_settings": "Réglages",
     "viewer_settings_hint": "Ce sont les réglages de l'onglet Réglages : ils s'appliquent à toutes les photos. L'image se recalcule après chaque changement.",
     "order_title": "Aperçu et ordre des images",

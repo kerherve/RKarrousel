@@ -10,10 +10,13 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from PIL import Image
+
 from tests.helpers import make_image
 
 try:
     import tkinter as tk
+    from tkinter import ttk
     tk.Tk().destroy()
     HAVE_DISPLAY = True
 except Exception:  # pas d'écran (CI Linux) : ces tests sont ignorés
@@ -222,6 +225,33 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: viewer.generation == 1 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
         viewer.close()
         self.assertEqual(refreshed, [True])  # la grille est rafraîchie à la fermeture
+
+    def test_viewer_greys_out_settings_the_displayed_image_does_not_use(self):
+        from rkarrousel.gui import image_viewer
+
+        self.app.model.signature_path.set(str(self.dir / "sig.png"))
+        Image.new("RGBA", (200, 80), (255, 255, 255, 255)).save(self.dir / "sig.png")
+        window = self.open_order_window(self.photos[1:2])  # paysage 3:2 : tranches, puis images entières
+
+        def open_viewer(kind):
+            index = next(i for i, tile in enumerate(window.tiles) if tile.kind == kind)
+            window.select(index)
+            window.view_selected()
+            return [w for w in window.winfo_children() if isinstance(w, image_viewer.ImageViewer)][-1]
+
+        def enabled(group):
+            return all("disabled" not in child.state() for child in group.winfo_children()
+                       if isinstance(child, ttk.Radiobutton))
+
+        part = open_viewer("part1")
+        self.assertFalse(enabled(part.fill_group))
+        self.assertIn("non applicable", part.fill_group.cget("text"))
+        self.assertIn("non applicable", part.signature_group.cget("text"))
+        part.close()
+        whole = open_viewer("part1_with_sig")
+        self.assertTrue(enabled(whole.fill_group))
+        self.assertNotIn("non applicable", whole.signature_group.cget("text"))
+        whole.close()
 
     def test_crop_button_is_only_enabled_on_a_crop_tile(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage

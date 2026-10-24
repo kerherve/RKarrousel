@@ -76,6 +76,16 @@ class ColorPicker(ttk.Frame):
         self.button.state(state)
 
 
+def set_tree_enabled(widget: tk.Misc, enabled: bool) -> None:
+    """Grise (ou réactive) tous les contrôles d'un groupe ; les `ColorPicker` gèrent leur propre état."""
+    for child in widget.winfo_children():
+        if isinstance(child, ColorPicker):
+            child.set_enabled(enabled)
+        elif hasattr(child, "state") and isinstance(child, ttk.Widget) and not isinstance(child, (ttk.Frame, ttk.Label)):
+            child.state(["!disabled"] if enabled else ["disabled"])
+        set_tree_enabled(child, enabled)
+
+
 class ChoiceBox(ttk.Combobox):
     """Liste déroulante liée à une variable : elle affiche le libellé de la valeur courante, y compris quand la
     variable change autrement (par exemple quand on applique un préréglage)."""

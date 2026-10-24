@@ -45,6 +45,21 @@ def kinds_for_ratio(ratio_type: Optional[str], config: dict, size: Optional[Tupl
     return []
 
 
+SIGNED_KINDS = ("with_sig", "part1_with_sig", "part2_with_sig")  # les images « entières », seules à porter la signature
+
+
+def kind_features(width: int, height: int, kind: str, config: dict) -> frozenset:
+    """Réglages qui changent l'image `kind` d'une photo de cette taille : « fill » (fond uni ou flouté autour de la
+    photo) et « signature ». Les tranches d'un panorama et les recadrages n'ont ni l'un ni l'autre, une photo déjà
+    au format de sortie non plus. Sert à griser les réglages sans effet."""
+    features = set()
+    if kind in SIGNED_KINDS:
+        features |= {"fill", "signature"}
+    elif kind == "framed" and detect_ratio_type(width, height, output_format_of(config)) != "portrait_3_4":
+        features.add("fill")  # image entière sans signature, posée sur un fond
+    return frozenset(features)
+
+
 def kinds_for_size(width: int, height: int, config: dict) -> List[str]:
     return kinds_for_ratio(detect_ratio_type(width, height, output_format_of(config)), config, (width, height))
 

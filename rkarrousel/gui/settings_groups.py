@@ -12,7 +12,7 @@ from rkarrousel.formats import OUTPUT_FORMATS, OUTPUT_WIDTHS
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.settings_model import ALL_KINDS
 from rkarrousel.gui.theme import THEME_CHOICES
-from rkarrousel.gui.widgets import ChoiceBox, ColorPicker, HintLabel, bind_trace
+from rkarrousel.gui.widgets import ChoiceBox, ColorPicker, HintLabel, bind_trace, set_tree_enabled
 from rkarrousel.i18n import kind_setting_label, t
 from rkarrousel.version import __version__
 
@@ -180,8 +180,18 @@ class FillGroup(ttk.LabelFrame):
         bind_trace(self, model.background_color_mode, self.refresh_state)
         self.refresh_state()
 
+    def set_applicable(self, applicable: bool) -> None:
+        """Hors de la visionneuse tout est applicable ; sur une image sans fond (tranche, recadrage…), tout est grisé."""
+        self.applicable = applicable
+        set_tree_enabled(self, applicable)
+        self.configure(text=t("fill_group") + ("" if applicable else " — " + t("viewer_not_applicable")))
+        if applicable:
+            self.refresh_state()
+
     def refresh_state(self) -> None:
         """La couleur ne sert qu'au fond uni et l'intensité qu'au fond flouté : on grise l'autre."""
+        if not getattr(self, "applicable", True):
+            return
         solid = self.model.landscape_fill_mode.get() != "blur"
         self.mode.state(["!disabled"] if solid else ["disabled"])
         self.background.set_enabled(solid and self.model.background_color_mode.get() == "fixed")
@@ -210,6 +220,11 @@ class SignatureGroup(ttk.LabelFrame):
         ttk.Spinbox(self, from_=0.3, to=3.0, increment=0.1, textvariable=model.signature_scale, width=6).grid(
             row=1, column=3, sticky=tk.W, pady=(8, 0), padx=8
         )
+
+    def set_applicable(self, applicable: bool) -> None:
+        """Sur une image sans signature (tranche, recadrage, photo au bon format), le groupe est grisé."""
+        set_tree_enabled(self, applicable)
+        self.configure(text=t("signature_group") + ("" if applicable else " — " + t("viewer_not_applicable")))
 
     def choose(self) -> None:
         path = filedialog.askopenfilename(
