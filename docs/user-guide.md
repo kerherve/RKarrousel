@@ -148,6 +148,9 @@ On a "crop" image, "Crop..." opens the editor:
 
 - Wheel: zoom; drag: move the image; "Fit" and "100%" to go back.
 - Round arrows on the edges (or the ← → keys): previous or next image of the grid, without closing the window. Excluded images are skipped; the position (3 / 12) is shown at the top.
+- Browsing is fast: neighbouring images and the preview of the new image show up immediately (they come from the grid), then full resolution sharpens as soon as you stop.
+- Dragging the image with the mouse slides it: released far enough (or with a quick flick), the neighbouring image slides in; otherwise it springs back. When zoomed, dragging moves the image.
+- The "Crop..." button opens the framing editor when the displayed image is a crop; the image is recomputed once you confirm.
 - Carousel preview: the previous and next images appear on either side, like when you swipe through an Instagram post, to judge the overall result (panorama slices that line up, neighbouring frames...). The "Carousel preview" box turns it off.
 - Right-click + drag: a ruler that measures in pixels, for example the frame thickness.
 - The frame thickness is also measured automatically and shown at the top.

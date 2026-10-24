@@ -365,6 +365,49 @@ class GuiFlowTests(unittest.TestCase):
         self.assertNotEqual(viewer.view.ox, before)
         viewer.close()
 
+    def open_viewer(self, window, index):
+        from rkarrousel.gui import viewer as viewer_pkg
+
+        window.select(index)
+        window.view_selected()
+        return next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+
+    def test_viewer_has_a_crop_button_that_works_on_crop_images(self):
+        window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
+        kinds = [tile.kind for tile in window.tiles]
+        viewer = self.open_viewer(window, kinds.index("crop34"))
+        self.pump(lambda: viewer.image is not None)
+        self.assertNotIn("disabled", viewer.toolbar.crop_button.state())
+        calls = []
+
+        def fake_editor(parent, source, config, apply, dark=False):  # l'éditeur valide aussitôt un recadrage
+            calls.append(parent)
+            apply(0.3)
+
+        before = viewer.jobs.generation
+        with mock.patch("rkarrousel.gui.order.window.CropEditor", fake_editor):
+            viewer._open_crop()
+        self.assertEqual(calls, [viewer])  # ouvert au-dessus de la visionneuse
+        self.assertEqual(self.app.ctx.config["crop_offsets"][str(self.photos[2])], 0.3)
+        self.pump(lambda: viewer.jobs.generation > before and viewer.settings_changed)  # l'image est recalculée
+        viewer.step(-1)  # image précédente : plus un recadrage, le bouton se grise
+        self.pump(lambda: window.model.selected == kinds.index("crop34") - 1 and not viewer.carousel.animating)
+        self.assertIn("disabled", viewer.toolbar.crop_button.state())
+        viewer.close()
+
+    def test_browsing_uses_the_previews_already_computed_by_the_grid(self):
+        window = self.open_order_window(self.photos[:2])  # 5 images
+        viewer = self.open_viewer(window, 1)
+        # sans attendre le moindre calcul : les deux voisines viennent des aperçus de la grille
+        self.assertIsNotNone(viewer.carousel.neighbors[-1])
+        self.assertIsNotNone(viewer.carousel.neighbors[1])
+        viewer.carousel.enabled.set(False)  # pas d'animation : changement direct
+        viewer.step(1)
+        self.assertTrue(viewer.placeholder)  # l'aperçu s'affiche tout de suite…
+        self.assertIsNotNone(viewer.image)
+        self.pump(lambda: not viewer.placeholder)  # …puis la pleine résolution le remplace
+        viewer.close()
+
     def test_viewer_rerenders_when_the_colour_source_changes(self):
         from rkarrousel.gui import viewer as viewer_pkg
 
@@ -388,7 +431,7 @@ class GuiFlowTests(unittest.TestCase):
         window.view_selected()
         viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
         self.pump(lambda: viewer.image is not None)
-        self.assertEqual(viewer.position_label.cget("text"), "1 / 5")
+        self.assertEqual(viewer.toolbar.position_label.cget("text"), "1 / 5")
         self.assertFalse(window.viewer_can_step(-1))  # première image : pas de flèche précédente
         # carrousel : la suivante est affichée à droite, pas de précédente avant la première
         self.pump(lambda: viewer.carousel.neighbors[1] is not None)
@@ -402,7 +445,7 @@ class GuiFlowTests(unittest.TestCase):
         first_source = viewer.source
         viewer.step(1)  # en carrousel, l'image suivante arrive en glissant
         self.pump(lambda: window.model.selected == 1 and not viewer.carousel.animating)
-        self.assertEqual(viewer.position_label.cget("text"), "2 / 5")
+        self.assertEqual(viewer.toolbar.position_label.cget("text"), "2 / 5")
         self.assertIn(kind_label(window.model.tiles[1].kind), viewer.title())
         self.pump(lambda: viewer.image is not None and viewer.jobs.generation >= 2)
         self.pump(lambda: viewer.image is not None and not viewer.placeholder and viewer.carousel.neighbors[1] is not None)

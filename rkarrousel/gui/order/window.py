@@ -195,6 +195,11 @@ class OrderWindow(tk.Toplevel):
         self.select(index)
         return self.model.tiles[index]
 
+    def viewer_preview(self, tile, config: dict):
+        """Aperçu déjà calculé pour la grille (valable si les réglages n'ont pas changé), ou None : la visionneuse
+        l'affiche tout de suite, en attendant le rendu en pleine résolution."""
+        return self.thumbs.lookup(tile.key, tile.source, config, render_signature(config))
+
     def viewer_peek(self, delta: int):
         """La vignette voisine (sans changer la sélection), pour l'aperçu en carrousel de la visionneuse."""
         index = self.model.step_from_selection(delta)
@@ -208,8 +213,16 @@ class OrderWindow(tk.Toplevel):
 
     def crop_selected(self) -> None:
         tile = self.model.selected_tile()
-        if tile is None or tile.kind != KIND_CROP or self.on_crop is None:
-            return
+        if tile is not None and tile.kind == KIND_CROP and self.on_crop is not None:
+            self._open_crop_editor(tile, self, None)
+
+    def viewer_crop(self, parent: tk.Misc, on_applied: Callable[[], None]) -> None:
+        """« Recadrer… » depuis la visionneuse : l'image affichée est la vignette sélectionnée."""
+        tile = self.model.selected_tile()
+        if tile is not None and tile.kind == KIND_CROP and self.on_crop is not None:
+            self._open_crop_editor(tile, parent, on_applied)
+
+    def _open_crop_editor(self, tile, parent: tk.Misc, on_applied: Optional[Callable[[], None]]) -> None:
         source, key = tile.source, tile.key
 
         def apply(offset: float) -> None:
@@ -219,8 +232,10 @@ class OrderWindow(tk.Toplevel):
             index = self.model.index_of(key)
             if index is not None:
                 self.select(index)
+            if on_applied is not None:
+                on_applied()
 
-        CropEditor(self, source, self.config_snapshot, apply, dark=self.dark)
+        CropEditor(parent, source, self.config_snapshot, apply, dark=self.dark)
 
     def open_tile(self, index: int) -> None:
         """Double-clic : le réglage du cadrage pour un recadrage, sinon la visionneuse."""

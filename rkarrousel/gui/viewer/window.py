@@ -11,18 +11,19 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
-from rkarrousel.config import background_color_of, border_color_of, config_for_photo
 from rkarrousel.gui.viewer.carousel import CAROUSEL_GAP, Carousel
+from rkarrousel.gui.viewer.frame_report import report_for
 from rkarrousel.gui.viewer.render_jobs import NEIGHBOR_SIDE, RenderJobs
 from rkarrousel.gui.viewer.ruler import Ruler
 from rkarrousel.gui.viewer.settings_panel import SettingsPanel
+from rkarrousel.gui.viewer.toolbar import ViewerToolbar
 from rkarrousel.gui.viewer.viewport import ZOOM_STEP, Viewport
 from rkarrousel.i18n import kind_label, t
-from rkarrousel.imaging.colors import resolve_photo_colors_for_path
-from rkarrousel.imaging.frames import measure_border
+from rkarrousel.kinds import KIND_CROP
 from rkarrousel.outputs import kind_features
 from rkarrousel.pipeline import peek_size
 
+FULL_RES_DELAY_MS = 250  # en feuilletant, la pleine résolution n'est calculée qu'une fois qu'on s'arrête
 RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
 POLL_MS = 80
 
@@ -59,6 +60,7 @@ class ImageViewer(tk.Toplevel):
         self.settings_changed = False
         self._closing = False
         self._rerender_job = None
+        self._full_job = None
 
         self.panel: Optional[SettingsPanel] = None
         self._build_ui()
@@ -66,9 +68,9 @@ class ImageViewer(tk.Toplevel):
             self.panel.apply_features(self._features())  # grise ce que cette image n'utilise pas
         self.ruler = Ruler(self.canvas, self.measure, lambda: self.view.zoom)
         self.carousel = Carousel(self.canvas, navigator, self.scale_ui, self._slide_distance, self._commit_step)
-        self._build_carousel_toolbar()
+        self._finish_toolbar()
         self._bind_events()
-        self._launch()
+        self._launch(main=True, keep_neighbors=False)
         self.after(POLL_MS, self._poll)
 
     # ------------------------------------------------------------------ interface
@@ -97,26 +99,19 @@ class ImageViewer(tk.Toplevel):
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
     def _build_toolbar(self, parent: ttk.Frame) -> None:
-        self.bar = bar = ttk.Frame(parent)
-        bar.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(bar, text=t("viewer_fit"), command=self.fit).pack(side=tk.LEFT)
-        ttk.Button(bar, text=t("viewer_100"), command=lambda: self.set_zoom(1.0)).pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(bar, text="−", width=3, command=lambda: self.zoom_by(1 / ZOOM_STEP)).pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(bar, text="+", width=3, command=lambda: self.zoom_by(ZOOM_STEP)).pack(side=tk.LEFT, padx=(6, 0))
-        self.zoom_label = ttk.Label(bar, text="")
-        self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
-        self.position_label = ttk.Label(bar, text="")
-        self.position_label.pack(side=tk.LEFT, padx=(16, 0))
-        ttk.Button(bar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
-        if self.panel is not None:
-            ttk.Button(bar, text=t("viewer_settings"), command=lambda: self.panel.toggle(self.main)).pack(
-                side=tk.RIGHT, padx=(0, 8))
+        self.toolbar = ViewerToolbar(
+            parent, self.fit, lambda: self.set_zoom(1.0), self.zoom_by, self.close,
+            on_toggle_settings=(lambda: self.panel.toggle(self.main)) if self.panel is not None else None,
+            on_crop=self._open_crop if self.navigator is not None else None,
+        )
+        self.toolbar.pack(fill=tk.X, pady=(0, 8))
 
-    def _build_carousel_toolbar(self) -> None:
+    def _finish_toolbar(self) -> None:
+        """Éléments qui dépendent du carrousel, créé après la barre."""
         if self.navigator is not None:
-            ttk.Checkbutton(self.bar, text=t("viewer_carousel"), variable=self.carousel.enabled, command=self.redraw).pack(
-                side=tk.LEFT, padx=(16, 0))
+            self.toolbar.add_carousel_toggle(self.carousel.enabled, self.redraw)
         self._update_position()
+        self._update_crop_button()
 
     def _bind_events(self) -> None:
         canvas = self.canvas
@@ -138,18 +133,30 @@ class ImageViewer(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     # ------------------------------------------------------------------ calcul de l'image
-    def _launch(self) -> None:
-        """Calcule l'image affichée (pleine résolution) et, en réduit, ses voisines de la grille (carrousel)."""
+    def _preview(self, tile) -> Optional[Image.Image]:
+        """Aperçu de `tile` déjà calculé par la grille (instantané), ou None s'il n'est pas à jour."""
+        if self.navigator is None:
+            return None
+        image = self.navigator.viewer_preview(tile, self.config_snapshot)
+        return image.convert("RGB") if image is not None else None
+
+    def _launch(self, main: bool, keep_neighbors: bool) -> None:
+        """Voisines du carrousel : aperçus de la grille s'ils sont à jour (instantané), sinon rendu réduit en tâche de
+        fond. Image affichée (si `main`) : rendu en pleine résolution. `keep_neighbors` garde celles déjà là."""
         peeks = {}
         if self.navigator is not None:
             for delta in (-1, 1):
                 tile = self.navigator.viewer_peek(delta)
-                if tile is not None:
+                if tile is None:
+                    self.carousel.set_neighbor(delta, None)
+                elif keep_neighbors and self.carousel.neighbors.get(delta) is not None:
+                    continue
+                elif (preview := self._preview(tile)) is not None:
+                    self.carousel.set_neighbor(delta, preview)
+                else:
                     peeks[delta] = (tile.source, tile.kind)
-        for delta in (-1, 1):
-            if delta not in peeks:
-                self.carousel.set_neighbor(delta, None)
-        self.jobs.launch(self.source, self.kind, dict(self.config_snapshot), peeks)
+        if main or peeks:
+            self.jobs.launch(self.source, self.kind, dict(self.config_snapshot), peeks, main=main)
 
     def _poll(self) -> None:
         if self._closing:
@@ -183,16 +190,14 @@ class ImageViewer(tk.Toplevel):
     def _describe(self) -> None:
         """Dimensions, couleur du cadre obtenue et épaisseur mesurée dans l'image."""
         assert self.image is not None
-        width, height = self.image.size
-        config = resolve_photo_colors_for_path(self.source, config_for_photo(self.config_snapshot, self.source))
+        report = report_for(self.image, self.source, self.config_snapshot)
         if self.panel is not None:
-            self.panel.show_resolved(border_color_of(config))
-        border = measure_border(self.image, border_color_of(config), skip_color=background_color_of(config))
-        if border:
-            percent = 100 * border / min(width, height)
-            self.info.set(t("viewer_info", width=width, height=height, border=border, percent=percent))
+            self.panel.show_resolved(report.color)
+        if report.border:
+            self.info.set(t("viewer_info", width=report.width, height=report.height, border=report.border,
+                            percent=report.percent))
         else:
-            self.info.set(t("viewer_info_noborder", width=width, height=height))
+            self.info.set(t("viewer_info_noborder", width=report.width, height=report.height))
 
     # ------------------------------------------------------------------ réglages en direct
     def _features(self) -> frozenset:
@@ -219,7 +224,7 @@ class ImageViewer(tk.Toplevel):
         self.config_snapshot = config
         self.settings_changed = True
         self.info.set(t("viewer_loading"))
-        self._launch()
+        self._launch(main=True, keep_neighbors=False)
 
     # ------------------------------------------------------------------ zoom / déplacement
     def _view_size(self) -> tuple:
@@ -281,11 +286,18 @@ class ImageViewer(tk.Toplevel):
             return float(self._view_size()[0])
         return self.image.width * self.view.zoom * (1 + CAROUSEL_GAP)
 
+    def _update_crop_button(self) -> None:
+        self.toolbar.set_crop_enabled(self.kind == KIND_CROP)
+
+    def _open_crop(self) -> None:
+        """« Recadrer… » : le même éditeur que dans la grille ; l'image se recalcule une fois le cadrage validé."""
+        if self.navigator is not None and self.kind == KIND_CROP:
+            self.navigator.viewer_crop(self, self._rerender)
+
     def _update_position(self) -> None:
         if self.navigator is None:
             return
-        number, total = self.navigator.viewer_position()
-        self.position_label.configure(text=f"{number} / {total}" if total else "")
+        self.toolbar.set_position(*self.navigator.viewer_position())
 
     def _key_step(self, delta: int) -> None:
         """Flèches du clavier : on n'intercepte pas la frappe quand on édite un champ du panneau de réglages."""
@@ -307,7 +319,7 @@ class ImageViewer(tk.Toplevel):
             return
         tile = self.navigator.viewer_step(delta)
         if tile is not None:
-            self.show(tile.source, tile.kind)
+            self.show(tile.source, tile.kind, placeholder=self._preview(tile))
 
     def _commit_step(self, delta: int) -> None:
         """Le glissement est terminé : l'image voisine devient l'image affichée, sans passer par un écran vide."""
@@ -316,6 +328,7 @@ class ImageViewer(tk.Toplevel):
         if tile is None:
             self.carousel.reset()
             return
+        incoming = incoming or self._preview(tile)
         behind = None
         if old is not None:
             behind = old.copy()
@@ -325,9 +338,10 @@ class ImageViewer(tk.Toplevel):
     def show(self, source: Path, kind: str, placeholder=None, behind=None) -> None:
         """Affiche une autre image dans la même fenêtre (zoom et règle repartent de zéro). `placeholder` : aperçu réduit
         montré en attendant la pleine résolution ; `behind` : (côté, image réduite) de l'image qu'on vient de quitter."""
-        if self._rerender_job is not None:
-            self.after_cancel(self._rerender_job)
-            self._rerender_job = None
+        for job in (self._rerender_job, self._full_job):
+            if job is not None:
+                self.after_cancel(job)
+        self._rerender_job = self._full_job = None
         self.source, self.kind = source, kind
         self.title(f"{source.name} — {kind_label(kind)}")
         self.image = self.photo = None
@@ -349,15 +363,22 @@ class ImageViewer(tk.Toplevel):
         if self.panel is not None:
             self.panel.set_source(source)
             self.panel.apply_features(self._features())
-        self._launch()
+        self._launch(main=False, keep_neighbors=True)  # voisines tout de suite (aperçus de la grille)
+        self._full_job = self.after(FULL_RES_DELAY_MS, self._launch_full)  # pleine résolution une fois arrêté
         self._update_position()
+        self._update_crop_button()
         self.carousel.draw_arrows(self._view_size())
+
+    def _launch_full(self) -> None:
+        self._full_job = None
+        if not self._closing:
+            self._launch(main=True, keep_neighbors=True)
 
     # ------------------------------------------------------------------ dessin
     def redraw(self) -> None:
         canvas = self.canvas
         canvas.delete("img", "neigh")
-        self.zoom_label.configure(text=t("viewer_zoom", percent=self.view.zoom * 100))
+        self.toolbar.set_zoom(self.view.zoom)
         if self.image is None:
             return
         view, size = self.view, self._view_size()
@@ -379,6 +400,7 @@ class ImageViewer(tk.Toplevel):
     def close(self) -> None:
         self._closing = True
         self.carousel.close()
+        self.jobs.close()
         changed = self.settings_changed and self.on_settings_changed is not None
         self.destroy()
         if changed:

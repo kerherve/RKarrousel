@@ -3,7 +3,7 @@
 Les threads postent leurs résultats dans une file ; le thread Tk les relève avec `drain()`. Chaque demande porte un
 numéro de génération : le résultat d'un rendu déjà remplacé par un réglage plus récent est ignoré."""
 import queue
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -18,15 +18,21 @@ class RenderJobs:
     def __init__(self):
         self.events: "queue.Queue[tuple]" = queue.Queue()
         self.generation = 0
+        # deux ouvriers au plus : en feuilletant vite, les rendus périmés en attente sont sautés au lieu de s'empiler
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="viewer-render")
 
-    def launch(self, source: Path, kind: str, config: dict, peeks: Peeks) -> int:
-        """Lance le rendu de l'image affichée et celui des voisines `peeks` ; renvoie le numéro de génération."""
+    def launch(self, source: Path, kind: str, config: dict, peeks: Peeks, main: bool = True) -> int:
+        """Lance le rendu de l'image affichée (si `main`) et celui des voisines `peeks` ; renvoie le numéro de génération."""
         self.generation += 1
         generation = self.generation
-        threading.Thread(target=self._render_main, args=(generation, source, kind, config), daemon=True).start()
+        if main:
+            self._pool.submit(self._render_main, generation, source, kind, config)
         if peeks:
-            threading.Thread(target=self._render_neighbors, args=(generation, config, peeks), daemon=True).start()
+            self._pool.submit(self._render_neighbors, generation, config, peeks)
         return generation
+
+    def close(self) -> None:
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def drain(self) -> List[tuple]:
         """Résultats reçus depuis le dernier appel, pour la génération courante : ("image", image), ("error", message)
@@ -41,6 +47,8 @@ class RenderJobs:
             return current
 
     def _render_main(self, generation: int, source: Path, kind: str, config: dict) -> None:
+        if generation != self.generation:
+            return  # un rendu plus récent a été demandé entre-temps
         try:
             self.events.put(("image", render_output(source, config, kind), generation))
         except Exception as exc:
@@ -48,6 +56,8 @@ class RenderJobs:
 
     def _render_neighbors(self, generation: int, config: dict, peeks: Peeks) -> None:
         for delta, (source, kind) in peeks.items():
+            if generation != self.generation:
+                return
             try:
                 image = render_output(source, config, kind, max_side=NEIGHBOR_SIDE)
             except Exception:

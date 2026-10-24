@@ -117,6 +117,9 @@ GUIDE = [
         ("bullets", [
             "Molette : zoom ; glisser : déplacer l'image ; « Ajuster » et « 100 % » pour revenir.",
             "Flèches rondes sur les bords (ou touches ← →) : image précédente ou suivante de la grille, sans fermer la fenêtre. Les images exclues sont sautées ; le rang (3 / 12) est en haut.",
+            "Feuilleter est rapide : les images voisines et l'aperçu de la nouvelle image s'affichent tout de suite (ils viennent de la grille), puis la pleine résolution se précise dès que vous vous arrêtez.",
+            "Glisser l'image à la souris la fait défiler : lâchée assez loin (ou d'un coup de pouce rapide), l'image voisine arrive en glissant ; sinon elle revient en place. Zoomée, le glisser déplace l'image.",
+            "Le bouton « Recadrer… » ouvre le réglage du cadrage quand l'image affichée est un recadrage ; l'image se recalcule une fois validé.",
             "Aperçu carrousel : les images précédente et suivante apparaissent de part et d'autre, comme quand on fait défiler un post Instagram, pour juger le rendu d'ensemble (tranches d'un panorama qui se raccordent, cadres voisins…). La case « Aperçu carrousel » le désactive.",
             "Clic droit + glisser : règle qui mesure en pixels, par exemple l'épaisseur du cadre.",
             "L'épaisseur du cadre est aussi mesurée automatiquement et affichée en haut.",
