@@ -524,6 +524,33 @@ class GuiFlowTests(unittest.TestCase):
         for shown, expected, selected in recorded:
             self.assertEqual(shown, expected, f"image {selected} : voisines affichées {shown}/{expected} juste après le défilement")
 
+    def test_every_image_of_the_carousel_is_prepared_in_the_background(self):
+        photos = [make_image(self.dir, f"b{i}.jpg", (1500, 1000)) for i in range(3)]  # 12 images
+        window = self.open_order_window(photos)
+        viewer = self.show_viewer_on(window, 5)
+
+        def everything_ready():
+            return all(viewer.loader.cache.get(tile.source, tile.kind, viewer.config_snapshot) is not None
+                       for tile in window.model.tiles)
+
+        self.pump(everything_ready, seconds=60)  # pas de limite : même les images éloignées sont prêtes, sans attendre qu'on s'en approche
+
+    def test_as_many_neighbours_as_the_window_can_show_are_drawn(self):
+        window = self.open_order_window(self.photos[:2])
+        viewer = self.show_viewer_on(window, 1)
+        self.pump(lambda: viewer.image is not None)
+        with mock.patch.object(viewer, "_view_size", return_value=(2400, 800)):
+            self.assertGreaterEqual(viewer._neighbors_in_view(), 3)  # une grande fenêtre : plus de trois photos visibles
+        with mock.patch.object(viewer, "_view_size", return_value=(viewer.image.width * viewer.view.zoom + 40, 800)):
+            self.assertEqual(viewer._neighbors_in_view(), 1)  # une fenêtre étroite : une de chaque côté, au minimum
+        from PIL import Image
+
+        for delta in (-3, -2, -1, 1, 2, 3):
+            viewer.carousel.set_neighbor(delta, Image.new("RGB", (300, 400)))
+        viewer.view.fit(viewer.image.size, (4000, 800))  # la vue correspond à cette grande fenêtre
+        viewer.carousel.redraw(viewer.image, viewer.view, (4000, 800))
+        self.assertEqual(len(viewer.canvas.find_withtag("neigh")), 6)  # toutes dessinées, de part et d'autre
+
     def test_a_neighbour_arriving_redraws_only_the_neighbours(self):
         window = self.open_order_window(self.photos[:2])
         viewer = self.show_viewer_on(window, 1)

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, ROOT.as_posix())
 
 from rkarrousel.gui.viewer.carousel import SWIPE_FRACTION, SWIPE_MIN_FLICK, SWIPE_VELOCITY, swipe_decision
-from rkarrousel.gui.viewer.loader import PreviewCache
+from rkarrousel.gui.viewer.preview_cache import PREVIEW, STRIP, PreviewCache, weight
 from rkarrousel.gui.viewer.render_jobs import PREVIEW_SIDE, RenderJobs
 from rkarrousel.gui.viewer.viewport import MAX_SCALE, MIN_SCALE, Viewport
 from tests.helpers import make_image
@@ -127,6 +127,13 @@ class RenderJobsTests(unittest.TestCase):
         self.a = make_image(self.dir, "a.jpg", (300, 400))
         self.b = make_image(self.dir, "b.jpg", (300, 400))
 
+    def collect_all(self, jobs, kind, count, seconds=15):
+        got, end = [], time.time() + seconds
+        while time.time() < end and len([g for g in got if g[0] == kind]) < count:
+            got += jobs.drain()
+            time.sleep(0.02)
+        return [g for g in got if g[0] == kind]
+
     def collect(self, jobs, kinds, seconds=10):
         got, end = [], time.time() + seconds
         while time.time() < end and not kinds <= {k for k, _ in got}:
@@ -164,9 +171,10 @@ class RenderJobsTests(unittest.TestCase):
         self.assertGreater(whole.height, 4800)  # pleine résolution : la photo entière, encadrée
 
     def test_the_cache_hands_back_a_preview_until_a_setting_changes(self):
-        cache = PreviewCache(size=2)
-        image = make_image(self.dir, "x.jpg", (100, 100))
         from PIL import Image
+
+        cache = PreviewCache()
+        image = make_image(self.dir, "x.jpg", (100, 100))
         preview = Image.new("RGB", (10, 10))
         config = {"frame_ratio": 0.03}
         self.assertIsNone(cache.get(image, "framed", config))
@@ -174,10 +182,63 @@ class RenderJobsTests(unittest.TestCase):
         self.assertIs(cache.get(image, "framed", config), preview)
         self.assertIsNone(cache.get(image, "framed", {"frame_ratio": 0.05}))  # un réglage a changé : plus valable
         self.assertIsNone(cache.get(image, "crop34", config))                  # autre type d'image
-        cache.put(image, "a", config, preview)
-        cache.put(image, "b", config, preview)  # trop plein : le plus ancien part
-        self.assertEqual(len(cache), 2)
-        self.assertIsNone(cache.get(image, "framed", config))
+
+    def test_a_small_preview_never_replaces_a_sharp_one_and_can_be_refused(self):
+        from PIL import Image
+
+        cache = PreviewCache()
+        source, config = self.a, {"frame_ratio": 0.03}
+        strip, sharp = Image.new("RGB", (10, 10)), Image.new("RGB", (40, 40))
+        cache.put(source, "framed", config, strip, STRIP)
+        self.assertIs(cache.get(source, "framed", config), strip)            # un petit aperçu fait l'affaire…
+        self.assertIsNone(cache.get(source, "framed", config, PREVIEW))      # … sauf si l'on veut un aperçu net
+        cache.put(source, "framed", config, sharp, PREVIEW)
+        cache.put(source, "framed", config, strip, STRIP)                    # ne remplace pas le net
+        self.assertIs(cache.get(source, "framed", config, PREVIEW), sharp)
+
+    def test_the_memory_limit_drops_small_previews_before_sharp_ones(self):
+        from PIL import Image
+
+        sharp = Image.new("RGB", (100, 100))
+        small = Image.new("RGB", (50, 50))
+        cache = PreviewCache(max_bytes=weight(sharp) + 2 * weight(small))
+        config = {"frame_ratio": 0.03}
+        cache.put(self.a, "k1", config, sharp, PREVIEW)
+        for name in ("s1", "s2", "s3", "s4"):
+            cache.put(self.a, name, config, small, STRIP)  # trop : les plus anciens petits partent
+        self.assertLessEqual(cache.total_bytes, cache.max_bytes)
+        self.assertIs(cache.get(self.a, "k1", config, PREVIEW), sharp)       # le net est resté
+        self.assertIsNone(cache.get(self.a, "s1", config))
+        self.assertIsNotNone(cache.get(self.a, "s4", config))
+        self.assertEqual(len(cache), 3)
+
+    def test_there_is_no_limit_on_the_number_of_images_only_on_memory(self):
+        from PIL import Image
+
+        cache = PreviewCache()
+        for index in range(200):
+            cache.put(self.a, f"k{index}", {"x": 1}, Image.new("RGB", (30, 30)), STRIP)
+        self.assertEqual(len(cache), 200)
+
+    def test_the_background_prefetch_prepares_a_small_preview_of_every_image(self):
+        jobs = RenderJobs()
+        photos = [make_image(self.dir, f"p{i}.jpg", (1200, 1600)) for i in range(5)]
+        jobs.prefetch({"frame_ratio": 0.03}, [(p, "framed") for p in photos])
+        got = self.collect_all(jobs, "strip", 5)
+        self.assertEqual({source for _, (_, source, _) in got}, set(photos))
+        self.assertTrue(all(max(image.size) <= 1000 for _, (image, _, _) in got))  # petits : environ 900 px
+
+    def test_a_newer_prefetch_request_replaces_the_previous_one(self):
+        jobs = RenderJobs()
+        photos = [make_image(self.dir, f"q{i}.jpg", (3000, 4000)) for i in range(6)]
+        jobs.prefetch({"frame_ratio": 0.03}, [(p, "framed") for p in photos[:3]])
+        jobs.prefetch({"frame_ratio": 0.03}, [(p, "framed") for p in photos[3:]])  # la 2e demande remplace la 1re
+        wanted, seen, end = set(photos[3:]), set(), time.time() + 30
+        while time.time() < end and not wanted <= seen:
+            seen |= {source for kind, (_, source, _) in jobs.drain() if kind == "strip"}
+            time.sleep(0.02)
+        self.assertTrue(wanted <= seen)  # les images de la 2e demande sont toutes préparées
+        self.assertFalse(set(photos[:3]) <= seen)  # la 1re demande a été abandonnée avant la fin
 
     def test_a_failing_render_reports_an_error(self):
         jobs = RenderJobs()

@@ -4,6 +4,7 @@ voisines de la grille comme sur un post Instagram.
 
 Les pièces vivent à côté : `viewport` (zoom), `render_jobs` (calculs en arrière-plan), `carousel`, `ruler` et
 `settings_panel`. Cette classe les assemble."""
+import math
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
@@ -11,10 +12,10 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
+from rkarrousel.gui.viewer.browsing import BrowsingMixin
 from rkarrousel.gui.viewer.carousel import CAROUSEL_GAP, Carousel
 from rkarrousel.gui.viewer.frame_report import report_for
 from rkarrousel.gui.viewer.loader import ImageLoader
-from rkarrousel.gui.viewer.render_jobs import PREVIEW_SIDE
 from rkarrousel.gui.viewer.resolution import Resolution
 from rkarrousel.gui.viewer.ruler import Ruler
 from rkarrousel.gui.viewer.settings_panel import SettingsPanel
@@ -22,15 +23,15 @@ from rkarrousel.gui.viewer.toolbar import ViewerToolbar
 from rkarrousel.gui.viewer.viewport import ZOOM_STEP, Viewport
 from rkarrousel.gui.widgets import Debouncer
 from rkarrousel.i18n import kind_label, t
-from rkarrousel.kinds import KIND_CROP
 from rkarrousel.outputs import kind_features
 from rkarrousel.pipeline import peek_size
 
+MAX_REACH = 6           # voisines affichées de chaque côté, au plus
 PREVIEW_DELAY_MS = 100   # en feuilletant, l'aperçu net n'est calculé qu'une fois qu'on s'arrête
 RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image
 
 
-class ViewerView(ttk.Frame):
+class ViewerView(BrowsingMixin, ttk.Frame):
     def __init__(
         self,
         parent: tk.Misc,
@@ -61,6 +62,7 @@ class ViewerView(ttk.Frame):
         self.resolution = Resolution()  # aperçu ou pleine résolution (voir resolution.py)
         self.settings_changed = False
         self._closing = False
+        self._reach = 1  # voisines affichées de chaque côté (selon la largeur de la fenêtre)
         self._rerender = Debouncer(self, RERENDER_DELAY_MS, self._recalculate)  # attend la fin d'un geste sur les réglages
         self._main_delay = Debouncer(self, PREVIEW_DELAY_MS, self._launch_main)  # attend qu'on cesse de feuilleter
         self.loader: Optional[ImageLoader] = None
@@ -127,27 +129,29 @@ class ViewerView(ttk.Frame):
         canvas.tag_bind("nav_prev", "<ButtonPress-1>", lambda e: self.step(-1))
         canvas.tag_bind("nav_next", "<ButtonPress-1>", lambda e: self.step(1))
 
-    def activate(self) -> None:
-        """L'étape devient visible : ← et → feuillettent les images."""
-        if self.navigator is None or self._keys:
-            return
-        top = self.winfo_toplevel()
-        self._keys = [("<Left>", top.bind("<Left>", lambda e: self._key_step(-1), add="+")),
-                      ("<Right>", top.bind("<Right>", lambda e: self._key_step(1), add="+"))]
-
-    def deactivate(self) -> None:
-        """L'étape est quittée : les touches ← et → ne sont plus à nous."""
-        top = self.winfo_toplevel()
-        for sequence, _ in self._keys:
-            top.unbind(sequence)
-        self._keys = []
-
     def _caption(self) -> str:
         return f"{self.source.name} — {kind_label(self.kind)}"
 
     # ------------------------------------------------------------------ calcul de l'image
     def _launch(self, main: bool, keep_neighbors: bool, full: bool = False) -> None:
-        self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors, full)
+        self._reach = self._neighbors_in_view()
+        self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors, full, self._reach)
+
+    def _neighbors_in_view(self) -> int:
+        """Combien d'images de chaque côté entrent dans la fenêtre : on en affiche autant (au moins une, au plus MAX_REACH)."""
+        if self.navigator is None or self.image is None:
+            return 1
+        step = self.image.width * (1 + CAROUSEL_GAP) * self.view.zoom  # largeur d'une image à l'écran, écart compris
+        if step <= 0:
+            return 1
+        side = (self._view_size()[0] - self.image.width * self.view.zoom) / 2  # place libre de chaque côté
+        return max(1, min(MAX_REACH, math.ceil(side / step)))
+
+    def _ensure_reach(self) -> None:
+        """La fenêtre a changé de taille (ou l'image vient d'arriver) : on charge plus de voisines si elles tiennent."""
+        if self.image is not None and self._neighbors_in_view() > self._reach:
+            self._launch(main=False, keep_neighbors=True)
+            self._neighbor_arrived()
 
     def _neighbor_arrived(self) -> None:
         """Une voisine vient d'arriver : on ne redessine qu'elle, pas toute l'image (ce qui ferait clignoter)."""
@@ -230,6 +234,7 @@ class ViewerView(ttk.Frame):
             return
         self.view.fit(self.image.size, self._view_size())
         self.redraw()
+        self._ensure_reach()
 
     def set_zoom(self, zoom: float) -> None:
         """Zoom en pixels réels (1 = 100 %) : sur un aperçu, c'est un zoom plus fort, donc la pleine résolution est chargée."""
@@ -276,105 +281,6 @@ class ViewerView(ttk.Frame):
     def _release(self, event) -> None:
         self.pan = None
         self.carousel.end_swipe()
-
-    # ------------------------------------------------------------------ navigation entre les images
-    def _slide_distance(self) -> float:
-        """Écart entre deux images du carrousel, en pixels écran."""
-        if self.image is None:
-            return float(self._view_size()[0])
-        return self.image.width * self.view.zoom * (1 + CAROUSEL_GAP)
-
-    def _update_crop_button(self) -> None:
-        self.toolbar.set_crop_enabled(self.kind == KIND_CROP)
-
-    def _open_crop(self) -> None:
-        """« Recadrer… » : le même éditeur que dans la grille ; l'image se recalcule une fois le cadrage validé."""
-        if self.navigator is not None and self.kind == KIND_CROP:
-            self.navigator.viewer_crop(self, self._recalculate)
-
-    def _update_position(self) -> None:
-        if self.navigator is None:
-            return
-        self.toolbar.set_position(*self.navigator.viewer_position())
-
-    def _key_step(self, delta: int) -> None:
-        """Flèches du clavier : on n'intercepte pas la frappe quand on édite un champ du panneau de réglages."""
-        try:
-            focused = self.focus_get()
-        except (KeyError, tk.TclError):
-            focused = None
-        if isinstance(focused, (tk.Entry, ttk.Entry, tk.Spinbox, ttk.Spinbox, ttk.Combobox)):
-            return
-        self.step(delta)
-
-    def step(self, delta: int) -> None:
-        """Image suivante (+1) ou précédente (-1) : en carrousel, elle arrive en glissant."""
-        if self.carousel.animating or not self.carousel.can_step(delta):
-            return
-        if (self.carousel.enabled.get() and self.view.fit_mode and self.image is not None
-                and self.carousel.neighbors.get(delta) is not None):
-            self.carousel.step(delta)
-            return
-        tile = self.navigator.viewer_step(delta)
-        if tile is not None:
-            self.show(tile.source, tile.kind, placeholder=self.loader.preview(tile, self.config_snapshot))
-
-    def _commit_step(self, delta: int) -> None:
-        """Le glissement est terminé : l'image voisine devient l'image affichée, sans passer par un écran vide."""
-        old, incoming = self.image, self.carousel.neighbors.get(delta)
-        tile = self.navigator.viewer_step(delta)
-        if tile is None:
-            self.carousel.reset()
-            return
-        incoming = incoming or self.loader.preview(tile, self.config_snapshot)
-        behind = None
-        if old is not None:
-            behind = old  # un aperçu est déjà petit : on le réutilise tel quel (et déjà redimensionné pour l'écran)
-            if old.width > PREVIEW_SIDE * 1.3 or old.height > PREVIEW_SIDE * 1.3:  # pleine résolution : version réduite
-                behind = old.copy()
-                behind.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.BILINEAR)
-        self.show(tile.source, tile.kind, placeholder=incoming, behind=(-delta, behind))
-
-    def show(self, source: Path, kind: str, placeholder=None, behind=None) -> None:
-        """Affiche une autre image dans la même fenêtre (zoom et règle repartent de zéro). `placeholder` : aperçu réduit
-        montré en attendant la pleine résolution ; `behind` : (côté, image réduite) de l'image qu'on vient de quitter."""
-        self._rerender.cancel()
-        self._main_delay.cancel()
-        self.source, self.kind = source, kind
-        self.caption.set(self._caption())
-        self.image = self.photo = None
-        self.loaded_once = False
-        self.pan = None
-        self.view.fit_mode = True
-        self.carousel.reset(behind)
-        self.ruler.clear()
-        self.canvas.delete("img", "neigh")
-        self.measure.set(t("viewer_hint"))
-        self.info.set(t("viewer_loading"))
-        self.resolution.reset()
-        self.placeholder = placeholder is not None
-        if placeholder is not None:
-            self.image = placeholder
-            self.loaded_once = True
-            self.fit()
-        if self.ctx is not None:
-            self.config_snapshot = dict(self.ctx.collect_config())
-        if self.panel is not None:
-            self.panel.set_source(source)
-            self.panel.apply_features(self._features())
-        self._launch(main=False, keep_neighbors=True)  # voisines tout de suite (cache, ou aperçus de la grille)
-        self._neighbor_arrived()  # et on les montre dans le même mouvement : pas d'image qui disparaît puis réapparaît
-        if self.loader.cache.get(source, kind, self.config_snapshot) is not None:
-            self._launch_main()  # déjà calculé : on l'affiche sans attendre
-        else:
-            self._main_delay.trigger()  # sinon une fois qu'on s'arrête
-        self._update_position()
-        self._update_crop_button()
-        self.carousel.draw_arrows(self._view_size())
-
-    def _launch_main(self) -> None:
-        if not self._closing:
-            self._launch(main=True, keep_neighbors=True)
 
     # ------------------------------------------------------------------ dessin
     def redraw(self) -> None:

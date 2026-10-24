@@ -43,7 +43,7 @@ class Carousel:
         self.canvas, self.navigator, self.scale = canvas, navigator, scale
         self.get_distance, self.on_commit = get_distance, on_commit
         self.enabled = tk.BooleanVar(master=canvas, value=True)  # case « Aperçu carrousel »
-        self.neighbors = {-1: None, 1: None}  # images voisines (PIL)
+        self.neighbors = {-1: None, 1: None}  # côté (-1, +1, -2, +2…) → image voisine (PIL)
         self.slide_px = 0.0                   # décalage horizontal actuel
         self.animating = False
         self._photos = {}                     # (image, taille) → image Tk : on ne redimensionne qu'une fois une voisine
@@ -79,13 +79,12 @@ class Carousel:
             return
         vw, vh = view_size
         gap = iw * CAROUSEL_GAP
-        for delta in (-1, 1):
-            neighbor = self.neighbors.get(delta)
+        for delta, neighbor in list(self.neighbors.items()):
             if neighbor is None:
                 continue
             dw = max(1, int(round(iw * view.zoom)))
             dh = max(1, int(round(dw * neighbor.height / neighbor.width)))
-            x = ((-(gap + iw) if delta < 0 else iw + gap) - view.ox) * view.zoom + self.slide_px
+            x = (delta * (iw + gap) - view.ox) * view.zoom + self.slide_px  # la delta-ième image, de part ou d'autre
             y = -view.oy * view.zoom
             if x + dw < 0 or x > vw or y + dh < 0 or y > vh:
                 continue  # hors de la zone visible
