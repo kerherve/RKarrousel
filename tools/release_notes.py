@@ -27,5 +27,5 @@ def section_for(version: str, text: str) -> str:
 if __name__ == "__main__":
     body = section_for(sys.argv[1], CHANGELOG.read_text(encoding="utf-8")) if len(sys.argv) == 2 else ""
     if body:
-        print(body)
+        sys.stdout.buffer.write((body + "\n").encode("utf-8"))  # UTF-8 quelle que soit la console (cp1252 sur Windows)
     sys.exit(0 if body else 1)
