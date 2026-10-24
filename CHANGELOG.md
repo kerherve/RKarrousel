@@ -4,6 +4,24 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.13.2
+
+### English
+
+- Adjust step: browsing is much faster. Each image shows as a sharp 1800 px preview (full resolution is only loaded when you zoom in), neighbours are prepared ahead, and the whole carousel is prepared in the background, so each step is nearly instant.
+- The carousel shows as many photos as the window can hold: zoom out ("-" or the wheel) to see dozens at once, like a film strip. The zoom you choose is kept when you move to another image.
+- Dragging scrolls through the images when the whole image is visible (fitted or zoomed out), and pans the image once you have zoomed in.
+- No more flicker or empty slot next to the image when swiping.
+- A warning appears when the solid background and the frame have the same colour (the frame can no longer be told apart).
+
+### Français
+
+- Étape Ajustements : le feuilletage est bien plus rapide. Chaque image s'affiche en aperçu net de 1800 px (la pleine résolution n'est chargée que si vous zoomez), les voisines sont préparées d'avance et tout le carrousel est préparé en arrière-plan : chaque pas est quasi instantané.
+- Le carrousel montre autant de photos que la fenêtre peut en contenir : dézoomez (« − » ou la molette) pour en voir des dizaines à la fois, comme une pellicule. Le zoom choisi est conservé quand on passe à une autre image.
+- Le glisser fait défiler les images quand l'image entière est visible (ajustée ou dézoomée), et déplace l'image une fois que vous avez zoomé.
+- Plus de clignotement ni de case vide à côté de l'image en glissant.
+- Un avertissement apparaît quand le fond uni et le cadre ont la même couleur (on ne distingue plus le cadre).
+
 ## v0.13.1
 
 ### English
