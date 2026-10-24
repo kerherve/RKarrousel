@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" alt="Logo RKarrousel" width="128"></p>
+
 # RKarrousel
 
 Prépare vos photos pour Instagram : cadre, fond flouté ou uni, découpe des panoramas en carrousel, recadrage, signature,

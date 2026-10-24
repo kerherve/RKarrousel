@@ -47,7 +47,7 @@ def main(argv=None) -> int:
     if FROZEN:
         updater.cleanup_leftovers(Path(sys.executable))
     root = create_root()
-    PhotoSplitterGUI(root)
+    app = PhotoSplitterGUI(root)
     if "--smoke-test" in argv:
         # Vérifie qu'on peut construire toute l'interface (utile pour l'exe sans console), puis quitte.
         out_index = argv.index("--smoke-test") + 1
@@ -57,7 +57,7 @@ def main(argv=None) -> int:
             root.update_idletasks()
             summary = (
                 f"ok v{__version__} dnd={'yes' if hasattr(root, 'drop_target_register') else 'no'}"
-                f" theme={ttk.Style().theme_use()}"
+                f" theme={ttk.Style().theme_use()} logo={'yes' if app.logo is not None else 'no'}"
             )
             if out_file:
                 out_file.write_text(summary, encoding="utf-8")

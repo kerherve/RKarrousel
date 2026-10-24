@@ -52,6 +52,13 @@ l'exécutable : `RKarrousel.exe --smoke-test`.
 L'installateur : `ISCC.exe /DAppVersion=X.Y.Z installer\RKarrousel.iss` → `dist\RKarrousel-Setup-vX.Y.Z.exe`
 (Inno Setup 6 ; pas de droits administrateur ; réglages par défaut dans `installer/default_config.json`).
 
+## Logo
+
+Le logo est dessiné par `python tools/make_logo.py` (trois photos encadrées façon carrousel, sans image source) : il produit
+`rkarrousel/assets/` (`icon.ico` multi-tailles, `logo_256.png`, `logo_64.png`) et `docs/logo.png`. Il sert d'icône de fenêtre, d'icône
+de l'exécutable (`--icon`), de l'installateur (`SetupIconFile`) et d'image d'en-tête ; `build_windows.bat` embarque
+`rkarrousel/assets` dans l'exécutable. Un test vérifie que les fichiers committés sont bien ceux que le script produit.
+
 ## Publier une version
 
 1. Mettre `rkarrousel/version.py` à jour (semver : `0.MINOR.0` pour une fonctionnalité, `0.x.PATCH` pour un correctif) et ajouter en tête de `CHANGELOG.md` une section `## vX.Y.Z` écrite pour l'utilisateur **dans les deux langues** (`### English` puis `### Français`) : elle devient le texte de la release et s'affiche dans la fenêtre de mise à jour (un test vérifie qu'elle existe).

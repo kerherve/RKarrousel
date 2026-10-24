@@ -41,7 +41,7 @@ different `rkarrousel/version.py` values, a local fake GitHub (`RKARROUSEL_UPDAT
    cp $W/dist/RKarrousel.exe dist/RKarrousel.exe
    ```
    The final `dist/RKarrousel.exe` must always be the one built for the release being cut.
-   Smoke-test it (builds the whole UI, then quits): `(cd $W/dist && ./RKarrousel.exe --smoke-test smoke.txt; sleep 3; cat smoke.txt)` must print `ok vX.Y.Z dnd=yes`.
+   Smoke-test it (builds the whole UI, then quits): `(cd $W/dist && ./RKarrousel.exe --smoke-test smoke.txt; sleep 3; cat smoke.txt)` must print `ok vX.Y.Z dnd=yes theme=... logo=yes`.
 4. Install locally for the user (their desktop shortcut points at the unversioned name): copy the new build into
    `/mnt/c/Users/riwal/Photos/imageSplitter/dist/` as TWO files, overwriting the old ones:
    `RKarrousel.exe` (stable name, used by the shortcut) and `RKarrousel-vX.Y.Z.exe` (versioned copy).

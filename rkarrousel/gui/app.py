@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from rkarrousel import i18n
 from rkarrousel.config import load_config
 from rkarrousel.gui.batch_controller import BatchController
+from rkarrousel.gui.branding import apply_window_icon, header_logo
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.drive_controller import DriveController
 from rkarrousel.gui.flow import Flow
@@ -32,6 +33,7 @@ class PhotoSplitterGUI:
         theme = apply_theme(config.get("theme", "auto"), root)
         place_main_window(root, theme.scale)
 
+        apply_window_icon(root)
         self.ctx = ctx = AppContext(root, config, theme, config_path)
         self.drive = DriveController(ctx)
         self.batch = BatchController(ctx, self.drive)
@@ -86,6 +88,9 @@ class PhotoSplitterGUI:
     def _build_header(self, container: ttk.Frame) -> None:
         header = ttk.Frame(container)
         header.pack(fill=tk.X, pady=(0, 14))
+        self.logo = header_logo(header, int(52 * self.ctx.theme.scale))  # garder la référence : sinon l'image disparaît
+        if self.logo is not None:
+            ttk.Label(header, image=self.logo).pack(side=tk.LEFT, padx=(0, 14))
         titles = ttk.Frame(header)
         titles.pack(side=tk.LEFT)
         ttk.Label(titles, text=t("app_heading"), style="Title.TLabel").pack(anchor=tk.W)
