@@ -11,8 +11,9 @@ from rkarrousel.config import border_tweak_of, color_mode_of, color_source_of
 Color = Tuple[int, int, int]
 LIGHT_MIX = 0.65   # part de blanc de la variante claire
 DARK_MIX = 0.65    # part de noir de la variante sombre
-CONTRAST_LIGHT_MIX = 0.9   # contraste sur photo sombre : presque blanc, avec un soupçon de la teinte
-CONTRAST_DARK_MIX = 0.88   # contraste sur photo claire : presque noir
+CONTRAST_LIGHT = 0.82      # contraste sur photo sombre : clair (clarté HLS), à la teinte de la photo
+CONTRAST_DARK = 0.14       # contraste sur photo claire : foncé
+CONTRAST_SATURATION = (0.25, 0.6)  # saturation minimale et maximale : une teinte lisible, jamais un blanc ou un noir pur
 EDGE_FRACTION = 0.06       # épaisseur de la bande de bord, en fraction du plus petit côté
 
 
@@ -70,8 +71,8 @@ def luminance(color: Color) -> float:
 
 def styled_color(color: Color, style: str) -> Color:
     """Variante de la couleur : `dominant` (telle quelle), `light` (éclaircie vers le blanc), `dark` (assombrie),
-    `complement` (teinte opposée, saturation et clarté tempérées) ou `contrast` (presque blanc sur une photo sombre,
-    presque noir sur une photo claire)."""
+    `complement` (teinte opposée, saturation et clarté tempérées) ou `contrast` (clair sur une photo sombre, foncé sur
+    une photo claire, à la teinte de la photo : un pastel ou un brun profond plutôt qu'un blanc ou un noir pur)."""
     if style == "light":
         return tuple(round(c + (255 - c) * LIGHT_MIX) for c in color)  # type: ignore[return-value]
     if style == "dark":
@@ -81,9 +82,11 @@ def styled_color(color: Color, style: str) -> Color:
         r, g, b = colorsys.hls_to_rgb((h + 0.5) % 1.0, min(0.75, max(0.3, light)), min(0.65, s))
         return (round(r * 255), round(g * 255), round(b * 255))
     if style == "contrast":
-        if luminance(color) < 0.5:
-            return tuple(round(c + (255 - c) * CONTRAST_LIGHT_MIX) for c in color)  # type: ignore[return-value]
-        return tuple(round(c * (1 - CONTRAST_DARK_MIX)) for c in color)  # type: ignore[return-value]
+        h, _, s = colorsys.rgb_to_hls(*(c / 255 for c in color))
+        light = CONTRAST_LIGHT if luminance(color) < 0.5 else CONTRAST_DARK
+        low, high = CONTRAST_SATURATION
+        r, g, b = colorsys.hls_to_rgb(h, light, 0.0 if s < 0.05 else min(high, max(low, s)))  # un gris reste neutre
+        return (round(r * 255), round(g * 255), round(b * 255))
     return color
 
 

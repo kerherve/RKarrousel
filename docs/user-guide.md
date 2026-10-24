@@ -88,7 +88,7 @@ The frame colour and the solid background colour can be computed for each photo:
 - Photo, light version: the dominant colour lightened (elegant for a frame).
 - Photo, dark version: the dominant colour darkened (ideal for a solid background).
 - Photo, complementary colour: the opposite hue, softened (a blue sky gives a warm frame, without a garish orange).
-- Photo, contrasting colour: almost white on a dark photo, almost black on a light one.
+- Photo, contrasting colour: a light tone on a dark photo, a deep one on a light photo, in the photo's hue (a pastel or a deep brown, never pure white or black).
 
 "Colour taken from" picks the reference colour: the dominant colour, the photo's edges (what the frame actually touches) or the average of the whole photo.
 

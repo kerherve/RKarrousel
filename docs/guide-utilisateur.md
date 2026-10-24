@@ -88,7 +88,7 @@ La couleur du cadre et celle du fond uni peuvent être calculées pour chaque ph
 - Photo, version claire : la dominante éclaircie (élégant pour un cadre).
 - Photo, version sombre : la dominante assombrie (idéal pour un fond uni).
 - Photo, couleur complémentaire : la teinte opposée, adoucie (un ciel bleu donne un cadre chaud, sans orange criard).
-- Photo, couleur de contraste : presque blanc sur une photo sombre, presque noir sur une photo claire.
+- Photo, couleur de contraste : un ton clair sur une photo sombre, foncé sur une photo claire, à la teinte de la photo (un pastel ou un brun profond, jamais un blanc ou un noir pur).
 
 « Couleur prise sur » choisit la couleur de référence : la couleur dominante, les bords de la photo (ce que le cadre touche vraiment) ou la moyenne de toute la photo.
 

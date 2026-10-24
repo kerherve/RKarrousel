@@ -9,7 +9,7 @@ par défaut (`config.py` valide chaque accès). Les chemins `/mnt/c/…` et `C:\
 | `frame_enabled` | `true` / `false` | `true` | Cadre autour de l'image (`false` = « Sans cadre ») |
 | `frame_ratio` | 0 à ~0,1 | `0.04` | Épaisseur du cadre, fraction du plus petit côté (l'appli l'affiche en %) |
 | `border_color` | `"#RRGGBB"` | `#FFFFFF` | Couleur du cadre |
-| `border_color_mode` | `fixed`, `dominant`, `light`, `dark`, `complement`, `contrast` | `fixed` | Cadre fixe, ou tiré de la photo : tel quel, version claire, sombre, complémentaire (teinte opposée adoucie) ou de contraste (presque blanc/noir) |
+| `border_color_mode` | `fixed`, `dominant`, `light`, `dark`, `complement`, `contrast` | `fixed` | Cadre fixe, ou tiré de la photo : tel quel, version claire, sombre, complémentaire (teinte opposée adoucie) ou de contraste (clair sur photo sombre, foncé sur photo claire, à la teinte de la photo) |
 | `color_source` | `dominant`, `edges`, `average` | `dominant` | D'où vient la couleur de référence des modes « tirée de la photo » : dominante, bords ou moyenne |
 | `landscape_fill_mode` | `black`, `blur` | `black` | Fond quand la photo n'a pas le format : uni ou flouté |
 | `background_color` | `"#RRGGBB"` | `#000000` | Couleur du fond uni |

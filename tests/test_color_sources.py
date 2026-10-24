@@ -32,8 +32,22 @@ class StyleTests(unittest.TestCase):
             self.assertLessEqual(sat, 0.66)
 
     def test_contrast_is_light_on_dark_photos_and_dark_on_light_ones(self):
-        self.assertGreater(colors.luminance(colors.styled_color((20, 30, 60), "contrast")), 0.85)
-        self.assertLess(colors.luminance(colors.styled_color((230, 220, 200), "contrast")), 0.15)
+        self.assertGreater(colors.luminance(colors.styled_color((20, 30, 60), "contrast")), 0.6)
+        self.assertLess(colors.luminance(colors.styled_color((230, 220, 200), "contrast")), 0.25)
+
+    def test_contrast_is_tinted_with_the_photo_hue_not_pure_white_or_black(self):
+        for color in ((150, 90, 50), (60, 80, 40), (30, 100, 160), (200, 150, 100)):
+            result = colors.styled_color(color, "contrast")
+            self.assertNotIn(result, ((255, 255, 255), (0, 0, 0)))
+            self.assertGreater(max(result) - min(result), 20, color)  # une vraie teinte
+            diff = abs(hue(result) - hue(color))
+            self.assertLess(min(diff, 1 - diff), 0.03, color)  # la teinte de la photo
+        self.assertEqual(len(set(colors.styled_color(c, "contrast") for c in ((150, 90, 50), (30, 100, 160), (60, 80, 40)))), 3)
+
+    def test_contrast_of_a_grey_stays_neutral(self):
+        r, g, b = colors.styled_color((120, 120, 120), "contrast")
+        self.assertEqual(r, g)
+        self.assertEqual(g, b)
 
 
 class TweakTests(unittest.TestCase):
@@ -146,8 +160,8 @@ class PerPhotoTests(unittest.TestCase):
 
     def test_override_with_a_photo_mode(self):
         self.config["photo_overrides"][str(self.a)] = {"border_color_mode": "contrast", "border_color": "#000000"}
-        light = self.frame_pixel(self.a)  # photo sombre : cadre presque blanc, teinté
-        self.assertGreater(colors.luminance(light), 0.85)
+        light = self.frame_pixel(self.a)  # photo sombre : cadre clair, à la teinte de la photo
+        self.assertGreater(colors.luminance(light), 0.6)
         self.assertNotEqual(light, (255, 255, 255))
 
     def test_preview_cache_is_invalidated_by_colour_settings(self):
