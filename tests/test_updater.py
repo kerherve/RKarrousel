@@ -89,7 +89,7 @@ class GitHubTests(unittest.TestCase):
         info = self.fetch()
         self.assertEqual(info.version, "9.9.9")
         self.assertEqual(info.asset_name, "RKarrousel-v9.9.9.exe")
-        self.assertEqual(info.notes, "- nouveautés")
+        self.assertEqual(info.notes, "\u2022 nouveautés")
         self.assertEqual(info.size, len(EXE_BYTES))
 
     def test_release_without_portable_exe(self):

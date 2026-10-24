@@ -118,5 +118,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           cp dist/RKarrousel.exe "dist/RKarrousel-${VERSION}.exe"
-          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" --title "$VERSION" --generate-notes
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            if python tools/release_notes.py "$VERSION" > release_notes.md; then
+              gh release create "$VERSION" --title "$VERSION" --notes-file release_notes.md
+            else
+              gh release create "$VERSION" --title "$VERSION" --generate-notes
+            fi
+          fi
           gh release upload "$VERSION" "dist/RKarrousel-${VERSION}.exe" "dist/RKarrousel-Setup-${VERSION}.exe" --clobber

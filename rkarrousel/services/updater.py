@@ -50,6 +50,23 @@ def is_newer(candidate: str, current: str) -> bool:
     return bool(new) and new > old
 
 
+def plain_notes(markdown: str) -> str:
+    """Notes de release en texte simple pour la fenêtre de mise à jour : sans balises Markdown, puces « • »,
+    et sans la ligne « Full Changelog » que GitHub ajoute seule (un simple lien de comparaison)."""
+    lines = []
+    for raw in markdown.replace("\r\n", "\n").split("\n"):
+        line = raw.strip().replace("**", "").replace("__", "").replace("`", "")
+        if not line and (not lines or not lines[-1]):
+            continue
+        if "Full Changelog" in line:
+            continue
+        line = line.lstrip("#").strip() if line.startswith("#") else line
+        if line.startswith(("- ", "* ")):
+            line = "\u2022 " + line[2:]
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 @dataclass
 class ReleaseInfo:
     version: str
@@ -90,7 +107,7 @@ def fetch_latest_release(repo: str = REPO, api: str = API_URL, timeout: float = 
             return ReleaseInfo(
                 version=version,
                 tag=tag,
-                notes=str(data.get("body") or "").strip(),
+                notes=plain_notes(str(data.get("body") or "")),
                 asset_name=asset["name"],
                 asset_url=str(asset.get("browser_download_url", "")),
                 size=int(asset.get("size") or 0),
