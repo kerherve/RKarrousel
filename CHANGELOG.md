@@ -4,6 +4,28 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.13.0
+
+### English
+
+- The app is now a four-step flow: Photos, Order, Adjust, Export. Use "Previous" and "Next" at the bottom (or click a step at the top); on the last step "Next" becomes "Start processing". The Files and Settings tabs are gone.
+- Photos: add your photos, choose the destination folder and the image format.
+- Order: the grid, with the "Images produced" column beside it. Select an image and click "Adjust this image" to move on to it.
+- Adjust: the full-resolution viewer with the carousel, presets and all frame, colour, background and signature settings.
+- Export: a summary of what will be produced, file quality and size, numbering and Google Drive.
+- Language, theme and updates moved to a "Preferences" button at the top right.
+- The order grid is now centred in the window, and it keeps the selected image when you go back and forth between steps.
+
+### Français
+
+- L'appli est maintenant un flux en quatre étapes : Photos, Ordre, Ajustements, Export. On avance avec « Précédent » et « Suivant » en bas (ou en cliquant une étape en haut) ; à la dernière étape, « Suivant » devient « Lancer le traitement ». Les onglets Fichiers et Réglages disparaissent.
+- Photos : ajoutez vos photos, choisissez le dossier de destination et le format des images.
+- Ordre : la grille, avec la colonne « Images produites » à côté. Sélectionnez une image et cliquez « Ajuster cette image » pour passer à l'étape suivante sur elle.
+- Ajustements : la visionneuse en pleine résolution avec le carrousel, les préréglages et tous les réglages de cadre, de couleurs, de fond et de signature.
+- Export : un récapitulatif de ce qui sera produit, la qualité et la taille des fichiers, la numérotation et Google Drive.
+- La langue, le thème et les mises à jour passent dans un bouton « Préférences » en haut à droite.
+- La grille d'ordre est maintenant centrée dans la fenêtre, et elle garde l'image sélectionnée quand on fait des allers-retours entre les étapes.
+
 ## v0.12.0
 
 ### English
