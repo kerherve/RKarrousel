@@ -1,6 +1,6 @@
-"""Fenêtre « Voir en grand » : l'image de sortie en pleine résolution, avec zoom, déplacement et règle pour mesurer
-(par exemple l'épaisseur du cadre). Un panneau latéral règle le cadre et le fond sans quitter la fenêtre, et un carrousel
-montre les images voisines de la grille comme sur un post Instagram.
+"""Étape « Ajustements » : l'image de sortie en pleine résolution, avec zoom, déplacement et règle pour mesurer
+(par exemple l'épaisseur du cadre). Un panneau latéral règle le cadre et le fond, et un carrousel montre les images
+voisines de la grille comme sur un post Instagram.
 
 Les pièces vivent à côté : `viewport` (zoom), `render_jobs` (calculs en arrière-plan), `carousel`, `ruler` et
 `settings_panel`. Cette classe les assemble."""
@@ -13,7 +13,8 @@ from PIL import Image, ImageTk
 
 from rkarrousel.gui.viewer.carousel import CAROUSEL_GAP, Carousel
 from rkarrousel.gui.viewer.frame_report import report_for
-from rkarrousel.gui.viewer.render_jobs import NEIGHBOR_SIDE, RenderJobs
+from rkarrousel.gui.viewer.loader import ImageLoader
+from rkarrousel.gui.viewer.render_jobs import NEIGHBOR_SIDE
 from rkarrousel.gui.viewer.ruler import Ruler
 from rkarrousel.gui.viewer.settings_panel import SettingsPanel
 from rkarrousel.gui.viewer.toolbar import ViewerToolbar
@@ -25,10 +26,9 @@ from rkarrousel.pipeline import peek_size
 
 FULL_RES_DELAY_MS = 250  # en feuilletant, la pleine résolution n'est calculée qu'une fois qu'on s'arrête
 RERENDER_DELAY_MS = 450  # on attend la fin de la frappe / du geste avant de recalculer l'image en pleine résolution
-POLL_MS = 80
 
 
-class ImageViewer(tk.Toplevel):
+class ViewerView(ttk.Frame):
     def __init__(
         self,
         parent: tk.Misc,
@@ -40,11 +40,11 @@ class ImageViewer(tk.Toplevel):
         on_settings_changed: Optional[Callable[[], None]] = None,
         navigator=None,
     ):
-        """`ctx` (AppContext) active le panneau de réglages ; `on_settings_changed` est appelé à la fermeture si
-        des réglages ont été modifiés (pour rafraîchir la grille d'ordre). `navigator` (la grille d'ordre) donne les
-        images voisines : `viewer_peek(±1)`, `viewer_step(±1)`, `viewer_can_step(±1)` et `viewer_position()`."""
+        """`ctx` (AppContext) active le panneau de réglages ; `on_settings_changed` est appelé par `flush_changes()`
+        (en quittant l'étape) si des réglages ont été modifiés, pour rafraîchir la grille d'ordre. `navigator` (la grille
+        d'ordre) donne les images voisines : `viewer_peek(±1)`, `viewer_step(±1)`, `viewer_can_step(±1)`,
+        `viewer_preview(tuile, config)`, `viewer_crop(parent, quand_validé)` et `viewer_position()`."""
         super().__init__(parent)
-        self.title(f"{source.name} — {kind_label(kind)}")
         self.source, self.kind, self.config_snapshot = source, kind, dict(config)
         self.scale_ui = max(1.0, self.winfo_fpixels("1i") / 96)
         self.bg = "#111111" if dark else "#2b2b2b"
@@ -54,13 +54,13 @@ class ImageViewer(tk.Toplevel):
         self.photo: Optional[ImageTk.PhotoImage] = None
         self.view = Viewport()
         self.pan: Optional[tuple] = None
-        self.jobs = RenderJobs()
         self.loaded_once = False
         self.placeholder = False  # l'image affichée est un aperçu réduit, la pleine résolution arrive
         self.settings_changed = False
         self._closing = False
         self._rerender_job = None
         self._full_job = None
+        self.loader: Optional[ImageLoader] = None
 
         self.panel: Optional[SettingsPanel] = None
         self._build_ui()
@@ -68,29 +68,26 @@ class ImageViewer(tk.Toplevel):
             self.panel.apply_features(self._features())  # grise ce que cette image n'utilise pas
         self.ruler = Ruler(self.canvas, self.measure, lambda: self.view.zoom)
         self.carousel = Carousel(self.canvas, navigator, self.scale_ui, self._slide_distance, self._commit_step)
+        self.loader = ImageLoader(self, navigator, self.carousel, self._show_rendered, self._show_error, self._neighbor_arrived)
         self._finish_toolbar()
         self._bind_events()
+        self._keys = []  # liaisons clavier de l'étape (voir `activate`)
+        self.bind("<Destroy>", lambda e: self._on_destroy() if e.widget is self else None, add="+")
         self._launch(main=True, keep_neighbors=False)
-        self.after(POLL_MS, self._poll)
+        self.loader.start_polling()
 
     # ------------------------------------------------------------------ interface
     def _build_ui(self) -> None:
-        s = self.scale_ui
-        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
-        wide = int(500 * s) if self.ctx is not None else 0  # place du panneau de réglages
-        width, height = min(int(980 * s) + wide, screen_w - 60), min(int(860 * s), screen_h - 120)
-        self.geometry(f"{width}x{height}+{max(0, (screen_w - width) // 2)}+{max(0, (screen_h - height) // 2 - 30)}")
-        self.minsize(int(480 * s), int(360 * s))
-
-        body = ttk.Frame(self, padding=(12, 10, 12, 10))
-        body.pack(fill=tk.BOTH, expand=True)
+        body = self
         if self.ctx is not None:
-            self.panel = SettingsPanel(body, self.ctx, self.source, s, self.bg, self._schedule_rerender)
+            self.panel = SettingsPanel(body, self.ctx, self.source, self.scale_ui, self.bg, self._schedule_rerender)
             self.panel.frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
         self.main = ttk.Frame(body)
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._build_toolbar(self.main)
 
+        self.caption = tk.StringVar(value=self._caption())
+        ttk.Label(self.main, textvariable=self.caption, font=("Segoe UI", 11, "bold")).pack(fill=tk.X)
         self.info = tk.StringVar(value=t("viewer_loading"))
         ttk.Label(self.main, textvariable=self.info).pack(fill=tk.X)
         self.measure = tk.StringVar(value=t("viewer_hint"))
@@ -100,7 +97,7 @@ class ImageViewer(tk.Toplevel):
 
     def _build_toolbar(self, parent: ttk.Frame) -> None:
         self.toolbar = ViewerToolbar(
-            parent, self.fit, lambda: self.set_zoom(1.0), self.zoom_by, self.close,
+            parent, self.fit, lambda: self.set_zoom(1.0), self.zoom_by,
             on_toggle_settings=(lambda: self.panel.toggle(self.main)) if self.panel is not None else None,
             on_crop=self._open_crop if self.navigator is not None else None,
         )
@@ -126,54 +123,35 @@ class ImageViewer(tk.Toplevel):
         canvas.bind("<Button-5>", lambda e: self._zoom_at(e.x, e.y, 1 / ZOOM_STEP))
         canvas.tag_bind("nav_prev", "<ButtonPress-1>", lambda e: self.step(-1))
         canvas.tag_bind("nav_next", "<ButtonPress-1>", lambda e: self.step(1))
-        self.bind("<Escape>", lambda e: self.close())
-        if self.navigator is not None:
-            self.bind("<Left>", lambda e: self._key_step(-1))
-            self.bind("<Right>", lambda e: self._key_step(1))
-        self.protocol("WM_DELETE_WINDOW", self.close)
+
+    def activate(self) -> None:
+        """L'étape devient visible : ← et → feuillettent les images."""
+        if self.navigator is None or self._keys:
+            return
+        top = self.winfo_toplevel()
+        self._keys = [("<Left>", top.bind("<Left>", lambda e: self._key_step(-1), add="+")),
+                      ("<Right>", top.bind("<Right>", lambda e: self._key_step(1), add="+"))]
+
+    def deactivate(self) -> None:
+        """L'étape est quittée : les touches ← et → ne sont plus à nous."""
+        top = self.winfo_toplevel()
+        for sequence, _ in self._keys:
+            top.unbind(sequence)
+        self._keys = []
+
+    def _caption(self) -> str:
+        return f"{self.source.name} — {kind_label(self.kind)}"
 
     # ------------------------------------------------------------------ calcul de l'image
-    def _preview(self, tile) -> Optional[Image.Image]:
-        """Aperçu de `tile` déjà calculé par la grille (instantané), ou None s'il n'est pas à jour."""
-        if self.navigator is None:
-            return None
-        image = self.navigator.viewer_preview(tile, self.config_snapshot)
-        return image.convert("RGB") if image is not None else None
-
     def _launch(self, main: bool, keep_neighbors: bool) -> None:
-        """Voisines du carrousel : aperçus de la grille s'ils sont à jour (instantané), sinon rendu réduit en tâche de
-        fond. Image affichée (si `main`) : rendu en pleine résolution. `keep_neighbors` garde celles déjà là."""
-        peeks = {}
-        if self.navigator is not None:
-            for delta in (-1, 1):
-                tile = self.navigator.viewer_peek(delta)
-                if tile is None:
-                    self.carousel.set_neighbor(delta, None)
-                elif keep_neighbors and self.carousel.neighbors.get(delta) is not None:
-                    continue
-                elif (preview := self._preview(tile)) is not None:
-                    self.carousel.set_neighbor(delta, preview)
-                else:
-                    peeks[delta] = (tile.source, tile.kind)
-        if main or peeks:
-            self.jobs.launch(self.source, self.kind, dict(self.config_snapshot), peeks, main=main)
+        self.loader.launch(self.source, self.kind, self.config_snapshot, main, keep_neighbors)
 
-    def _poll(self) -> None:
-        if self._closing:
-            return
-        for kind, payload in self.jobs.drain():
-            if kind == "neighbor":
-                delta, image = payload
-                self.carousel.set_neighbor(delta, image.convert("RGB") if image is not None else None)
-                if self.image is not None:
-                    self.redraw()
-            elif kind == "image" and payload is not None:
-                self._show_rendered(payload.convert("RGB"))
-            elif kind == "error":
-                self.info.set(t("order_error", message=payload))
-            else:
-                self.info.set(t("order_error", message="?"))
-        self.after(POLL_MS, self._poll)
+    def _neighbor_arrived(self) -> None:
+        if self.image is not None:
+            self.redraw()
+
+    def _show_error(self, message: str) -> None:
+        self.info.set(t("order_error", message=message))
 
     def _show_rendered(self, image: Image.Image) -> None:
         self.image = image
@@ -319,7 +297,7 @@ class ImageViewer(tk.Toplevel):
             return
         tile = self.navigator.viewer_step(delta)
         if tile is not None:
-            self.show(tile.source, tile.kind, placeholder=self._preview(tile))
+            self.show(tile.source, tile.kind, placeholder=self.loader.preview(tile, self.config_snapshot))
 
     def _commit_step(self, delta: int) -> None:
         """Le glissement est terminé : l'image voisine devient l'image affichée, sans passer par un écran vide."""
@@ -328,7 +306,7 @@ class ImageViewer(tk.Toplevel):
         if tile is None:
             self.carousel.reset()
             return
-        incoming = incoming or self._preview(tile)
+        incoming = incoming or self.loader.preview(tile, self.config_snapshot)
         behind = None
         if old is not None:
             behind = old.copy()
@@ -343,7 +321,7 @@ class ImageViewer(tk.Toplevel):
                 self.after_cancel(job)
         self._rerender_job = self._full_job = None
         self.source, self.kind = source, kind
-        self.title(f"{source.name} — {kind_label(kind)}")
+        self.caption.set(self._caption())
         self.image = self.photo = None
         self.loaded_once = False
         self.pan = None
@@ -397,11 +375,19 @@ class ImageViewer(tk.Toplevel):
         self.ruler.draw()
         canvas.tag_raise("nav")
 
-    def close(self) -> None:
-        self._closing = True
-        self.carousel.close()
-        self.jobs.close()
-        changed = self.settings_changed and self.on_settings_changed is not None
-        self.destroy()
-        if changed:
+    def flush_changes(self) -> None:
+        """En quittant l'étape : si des réglages ont changé ici, la grille d'ordre est rafraîchie."""
+        if self.settings_changed and self.on_settings_changed is not None:
+            self.settings_changed = False
             self.on_settings_changed()
+
+    def _on_destroy(self) -> None:
+        self._closing = True
+        for job in (self._rerender_job, self._full_job):  # pas de rappel sur une fenêtre détruite
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+        self.carousel.close()
+        self.loader.close()

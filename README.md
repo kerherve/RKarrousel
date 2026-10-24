@@ -15,6 +15,12 @@ Téléchargez depuis les [Releases](https://github.com/kerherve/RKarrousel/relea
 
 L'appli recherche ensuite elle-même les nouvelles versions au démarrage et se met à jour en un clic.
 
+## Comment ça marche
+
+Un flux en quatre étapes : **Photos** (ajout, dossier de destination, format) → **Ordre** (la grille façon profil
+Instagram : réordonner, exclure, recadrer) → **Ajustements** (image par image, avec un carrousel qui montre les
+voisines) → **Export** (qualité, taille, numérotation, Google Drive, « Lancer le traitement »).
+
 ## Ce qu'elle fait
 
 | Photo source | Images produites |

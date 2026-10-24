@@ -55,19 +55,22 @@ exclusions et le préfixe numérique (`01_`) s'expriment tous avec ces clés (`p
 
 ## Interface (`gui/`)
 
-- `app.py` : `PhotoSplitterGUI` assemble le contexte, les contrôleurs et les onglets.
+L'appli est un **flux en quatre étapes** : Photos → Ordre → Ajustements → Export.
+
+- `app.py` : `PhotoSplitterGUI` assemble le contexte, les contrôleurs, l'en-tête (Préférences, Guide, À propos) et le flux.
+- `flow/` : le flux. `steps` (les étapes et les règles pour avancer, sans Tk : sans photo ni destination on reste sur « Photos », sans image à produire on ne dépasse pas « Ordre »), `stepper` (le bandeau cliquable), `navigation` (la barre « Précédent » / « Suivant » ; à la dernière étape « Suivant » devient « Lancer le traitement »), `flow` (le conteneur : affiche une page, appelle `on_show` / `on_hide`). `pages/` : une page par étape — `photos_page` (+ `preview_panel`), `order_page` (la grille et la colonne « images produites »), `adjust_page` (la visionneuse), `export_page` (récapitulatif, sortie, Drive).
 - `context.py` : `AppContext`, état partagé (config, modèle des réglages, thème, barre d'état, bus d'événements).
+- `session.py` : l'état de la session (photos choisies, ordre, exclusions, cache d'aperçus). Quand la place des « photos entières » change, l'ordre choisi est remis à zéro (`sync_layout`).
 - `settings_model.py` : `SettingsModel`, les variables Tk de tous les réglages ; `collect()` / `apply(valeurs)` font le lien avec le JSON.
-- `settings_tab.py` + `settings_groups/` : un groupe par bloc de réglages, rangés par thème — `presets_group`, `look` (cadre, fond, signature), `output` (format, taille, types d'images), `appearance` (langue, thème, mises à jour), `drive_group`.
-- `files_tab.py`, `summary.py` : liste des photos, aperçu, récapitulatif de fin de traitement.
+- `settings_groups/` : un groupe par bloc de réglages, rangés par thème — `presets_group`, `look` (cadre, fond, signature), `output` (format, taille, types d'images), `appearance` (langue, thème, mises à jour), `drive_group`. Chaque groupe est posé là où il sert : le format à l'étape Photos, les types d'images à l'étape Ordre, les réglages d'apparence à l'étape Ajustements, la sortie et Drive à l'étape Export, langue / thème / mises à jour dans les Préférences (`preferences_dialog.py`).
 - `events.py` : **bus d'événements**. Les threads de travail y *postent* des messages ; seul le thread Tk les distribue. Aucun widget n'est touché hors du thread Tk.
-- `batch_controller`, `drive_controller`, `update_controller`, `order_flow` : un contrôleur par fonction, chacun porte son propre thread et ses messages.
-- `order/` : la grille « Aperçu et ordre » (les vignettes gardent leur taille, une fenêtre plus large ajoute des colonnes ; avertissement au-delà de 20 images, `formats.INSTAGRAM_MAX_IMAGES`), en cinq pièces — `grid_layout` (géométrie), `model` (ordre et exclusions), `thumbnails` (rendu des vignettes en arrière-plan), `grid_canvas` (dessin et glisser-déposer), `window`.
-- `viewer/` : la visionneuse « Voir en grand », en pièces — `viewport` (zoom et déplacement, sans Tk), `render_jobs` (calculs en arrière-plan, avec numéro de génération pour ignorer les résultats périmés), `carousel` (voisines, défilement à la souris, animation), `ruler` (mesure en pixels), `toolbar`, `frame_report` (couleur et épaisseur du cadre obtenus), `settings_panel` (réglages en direct), `window` (assemble le tout). Les voisines et l'aperçu de la nouvelle image viennent d'abord du cache d'aperçus de la grille (instantané) ; la pleine résolution n'est calculée qu'une fois qu'on s'arrête.
+- `batch_controller`, `drive_controller`, `update_controller` : un contrôleur par fonction, chacun porte son propre thread et ses messages. `summary.py` : récapitulatif de fin de traitement.
+- `order/` : la grille de l'étape Ordre (les vignettes gardent leur taille, une fenêtre plus large ajoute des colonnes ; avertissement au-delà de 20 images, `formats.INSTAGRAM_MAX_IMAGES`), en pièces — `grid_layout` (géométrie), `model` (ordre, exclusions, sélection), `thumbnails` (rendu des vignettes en arrière-plan), `grid_canvas` (dessin et glisser-déposer), `view` (assemble le tout ; sert aussi de « navigateur » à la visionneuse).
+- `viewer/` : la visionneuse de l'étape Ajustements, en pièces — `viewport` (zoom et déplacement, sans Tk), `render_jobs` (calculs en arrière-plan, avec numéro de génération pour ignorer les résultats périmés), `loader` (lance les rendus, aperçus de la grille pour les voisines, relève les résultats), `carousel` (voisines, défilement à la souris, animation), `ruler` (mesure en pixels), `toolbar`, `frame_report` (couleur et épaisseur du cadre obtenus), `settings_panel` (préréglages et réglages en direct), `view` (assemble le tout). Les voisines et l'aperçu de la nouvelle image viennent d'abord du cache d'aperçus de la grille (instantané) ; la pleine résolution n'est calculée qu'une fois qu'on s'arrête.
 - `photo_frame_group.py` : couleur du cadre propre à une photo, couleur obtenue et retouche fine (utilisé par la visionneuse).
 - `crop_editor.py`, `guide_window.py`, `update_dialog.py` : fenêtres secondaires.
 - `widgets.py` : composants communs (`ChoiceBox`, `ColorPicker`, `HintLabel`, `make_scrollable`, `bind_trace`).
-- Changer la langue ou le thème **reconstruit** toute l'interface (`PhotoSplitterGUI._rebuild`).
+- Changer la langue ou le thème **reconstruit** toute l'interface (`PhotoSplitterGUI._rebuild`), en restant sur la même étape.
 
 ## Le guide d'utilisation
 

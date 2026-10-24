@@ -16,6 +16,9 @@ except Exception:  # pas d'écran (CI Linux) : ces tests sont ignorés
     HAVE_DISPLAY = False
 
 
+from tests.helpers import build_settings_groups
+
+
 @unittest.skipUnless(HAVE_DISPLAY, "pas d'affichage graphique")
 class GuiBuildTests(unittest.TestCase):
     """Construit toute l'interface : attrape les oublis d'ordre de création, de variables ou de textes."""
@@ -30,7 +33,15 @@ class GuiBuildTests(unittest.TestCase):
         self.root = create_root()
         self.app = PhotoSplitterGUI(self.root, config_path=self.config_path)
 
+    @property
+    def settings_tab(self):
+        """Les groupes de réglages, construits à la demande (voir tests/helpers.py)."""
+        if getattr(self, "_groups", None) is None:
+            self._groups = build_settings_groups(self.root, self.app.ctx)
+        return self._groups
+
     def tearDown(self):
+        self._groups = None
         self.root.destroy()
         self.tmp.cleanup()
         self.app = self.root = None  # libération dans le thread principal (voir test_gui_flow)
@@ -85,16 +96,16 @@ class GuiBuildTests(unittest.TestCase):
 
     def test_irrelevant_fill_controls_are_greyed_out(self):
         self.app.model.landscape_fill_mode.set("blur")
-        self.assertTrue(self.app.settings_tab.fill.background.entry.instate(["disabled"]))
-        self.assertTrue(self.app.settings_tab.fill.blur_spin.instate(["!disabled"]))
+        self.assertTrue(self.settings_tab.fill.background.entry.instate(["disabled"]))
+        self.assertTrue(self.settings_tab.fill.blur_spin.instate(["!disabled"]))
         self.app.model.landscape_fill_mode.set("black")
-        self.assertTrue(self.app.settings_tab.fill.background.entry.instate(["!disabled"]))
-        self.assertTrue(self.app.settings_tab.fill.blur_spin.instate(["disabled"]))
+        self.assertTrue(self.settings_tab.fill.background.entry.instate(["!disabled"]))
+        self.assertTrue(self.settings_tab.fill.blur_spin.instate(["disabled"]))
 
     def test_no_frame_greys_out_the_frame_controls(self):
         self.app.model.no_frame.set(True)
-        self.app.settings_tab.frame.refresh_state()
-        self.assertTrue(self.app.settings_tab.frame.spin.instate(["disabled"]))
+        self.settings_tab.frame.refresh_state()
+        self.assertTrue(self.settings_tab.frame.spin.instate(["disabled"]))
 
 
 if __name__ == "__main__":

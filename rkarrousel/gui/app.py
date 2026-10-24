@@ -1,4 +1,4 @@
-"""Fenêtre principale : assemble les onglets, le panneau d'aperçu, la barre de progression et les contrôleurs."""
+"""Fenêtre principale : l'en-tête, le flux en étapes (Photos → Ordre → Ajustements → Export) et les contrôleurs."""
 import logging
 import sys
 import tkinter as tk
@@ -10,10 +10,9 @@ from rkarrousel.config import load_config
 from rkarrousel.gui.batch_controller import BatchController
 from rkarrousel.gui.context import AppContext
 from rkarrousel.gui.drive_controller import DriveController
-from rkarrousel.gui.files_tab import FilesTab, PreviewPanel
+from rkarrousel.gui.flow import Flow
 from rkarrousel.gui.guide_window import GuideWindow
-from rkarrousel.gui.order_flow import OrderController
-from rkarrousel.gui.settings_tab import SettingsTab
+from rkarrousel.gui.preferences_dialog import PreferencesDialog
 from rkarrousel.gui.system import FROZEN
 from rkarrousel.gui.theme import THEME_CHOICES, apply_theme, place_main_window
 from rkarrousel.gui.update_controller import UpdateController
@@ -37,10 +36,10 @@ class PhotoSplitterGUI:
         self.drive = DriveController(ctx)
         self.batch = BatchController(ctx, self.drive)
         self.updates = UpdateController(ctx)
-        self.order = OrderController(ctx)
         ctx.on_processing_changed = self.apply_processing_state
 
-        self.preview = self.files_tab = self.settings_tab = self.notebook = None
+        self.flow = None
+        self.preferences = None
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.report_callback_exception = self.on_tk_exception
         root.bind("<F1>", lambda _e: self.show_guide())
@@ -65,7 +64,7 @@ class PhotoSplitterGUI:
         return self.ctx.collect_config()
 
     # ------------------------------------------------------------------ construction de l'interface
-    def build_ui(self, select_tab: int = 0) -> None:
+    def build_ui(self, select_step: int = 0) -> None:
         ctx, root = self.ctx, self.root
         for child in root.winfo_children():
             child.destroy()
@@ -80,64 +79,26 @@ class PhotoSplitterGUI:
 
         container = ttk.Frame(root, padding=(22, 16, 22, 16))
         container.pack(fill=tk.BOTH, expand=True)
-        container.columnconfigure(0, weight=1)
-        container.rowconfigure(1, weight=1)
-
         self._build_header(container)
-        self.preview = PreviewPanel(container, ctx)
-        self.preview.grid(row=1, column=1, sticky=tk.NSEW, padx=(16, 0))
-
-        self.notebook = ttk.Notebook(container)
-        self.notebook.grid(row=1, column=0, sticky=tk.NSEW)
-        self.files_tab = FilesTab(self.notebook, ctx, self.preview)
-        self.settings_tab = SettingsTab(
-            self.notebook, ctx, self.drive, self.change_language, self.change_theme,
-            on_check_updates=lambda: self.updates.check(manual=True),
-        )
-        self.notebook.add(self.files_tab, text=t("tab_files"))
-        self.notebook.add(self.settings_tab, text=t("tab_settings"))
-        if select_tab:
-            self.notebook.select(select_tab)
-
-        self._build_controls(container)
+        self.flow = Flow(container, ctx, self.drive, self.batch, step=select_step)
+        self.flow.pack(fill=tk.BOTH, expand=True)
 
     def _build_header(self, container: ttk.Frame) -> None:
         header = ttk.Frame(container)
-        header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 14))
+        header.pack(fill=tk.X, pady=(0, 14))
         titles = ttk.Frame(header)
         titles.pack(side=tk.LEFT)
         ttk.Label(titles, text=t("app_heading"), style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(titles, text=t("app_subtitle"), style="Subtitle.TLabel").pack(anchor=tk.W)
         ttk.Button(header, text=t("about"), command=self.show_about).pack(side=tk.RIGHT, anchor=tk.S)
         ttk.Button(header, text=t("guide"), command=self.show_guide).pack(side=tk.RIGHT, anchor=tk.S, padx=(0, 8))
-
-    def _build_controls(self, container: ttk.Frame) -> None:
-        ctx = self.ctx
-        controls = ttk.Frame(container)
-        controls.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(16, 0))
-        ttk.Progressbar(controls, variable=ctx.progress_value, maximum=100).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 16)
-        )
-        self.order_button = ttk.Button(controls, text=t("btn_order"), command=self.order.open)
-        self.order_button.pack(side=tk.LEFT, padx=(0, 10))
-        self.process_button = ttk.Button(
-            controls, text=t("btn_process"), command=self.batch.start, style=ctx.theme.accent_style
-        )
-        self.process_button.pack(side=tk.LEFT)
-        self.cancel_button = ttk.Button(controls, text=t("btn_cancel"), command=self.batch.cancel)
-        self.apply_processing_state()
+        ttk.Button(header, text=t("prefs"), command=self.show_preferences).pack(side=tk.RIGHT, anchor=tk.S, padx=(0, 8))
 
     def apply_processing_state(self) -> None:
-        """Pendant un traitement : bouton « Annuler » à la place de « Lancer », et grille d'ordre indisponible."""
+        """Pendant un traitement : seul « Annuler » reste actif dans le flux."""
         try:
-            if self.ctx.processing:
-                self.process_button.pack_forget()
-                self.cancel_button.pack(side=tk.LEFT)
-                self.order_button.state(["disabled"])
-            else:
-                self.cancel_button.pack_forget()
-                self.process_button.pack(side=tk.LEFT)
-                self.order_button.state(["!disabled"])
+            if self.flow is not None:
+                self.flow.refresh_controls()
         except tk.TclError:  # widgets détruits pendant une reconstruction
             pass
 
@@ -160,11 +121,12 @@ class PhotoSplitterGUI:
         self._rebuild()
 
     def _rebuild(self) -> None:
-        """Reconstruit l'interface (nouvelle langue ou nouveau thème) en restant sur l'onglet Réglages."""
-        self.order.close()
-        if self.guide_window is not None and self.guide_window.winfo_exists():
-            self.guide_window.destroy()
-        self.build_ui(select_tab=1)
+        """Reconstruit l'interface (nouvelle langue ou nouveau thème) en restant sur la même étape."""
+        step = self.flow.index if self.flow is not None else 0
+        for window in (self.guide_window, self.preferences):
+            if window is not None and window.winfo_exists():
+                window.destroy()
+        self.build_ui(select_step=step)
         self.ctx.set_status(t("status_ready"))
 
     # ------------------------------------------------------------------ divers
@@ -175,6 +137,14 @@ class PhotoSplitterGUI:
             self.guide_window.focus_set()
             return
         self.guide_window = GuideWindow(self.root)
+
+    def show_preferences(self) -> None:
+        if self.preferences is not None and self.preferences.winfo_exists():
+            self.preferences.lift()
+            return
+        self.preferences = PreferencesDialog(
+            self.root, self.ctx, self.change_language, self.change_theme, lambda: self.updates.check(manual=True)
+        )
 
     def show_about(self) -> None:
         messagebox.showinfo(t("about"), t("about_text", version=__version__, log=str(LOG_PATH)))

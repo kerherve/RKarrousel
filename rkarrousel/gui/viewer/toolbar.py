@@ -1,4 +1,4 @@
-"""Barre d'outils de la visionneuse : zoom, rang dans la grille, aperçu carrousel, recadrage, réglages et fermeture."""
+"""Barre d'outils de la visionneuse : zoom, rang dans la grille, aperçu carrousel, recadrage et réglages."""
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
@@ -14,7 +14,6 @@ class ViewerToolbar(ttk.Frame):
         on_fit: Callable[[], None],
         on_zoom_100: Callable[[], None],
         on_zoom_by: Callable[[float], None],
-        on_close: Callable[[], None],
         on_toggle_settings: Optional[Callable[[], None]] = None,
         on_crop: Optional[Callable[[], None]] = None,
     ):
@@ -28,7 +27,6 @@ class ViewerToolbar(ttk.Frame):
         self.zoom_label.pack(side=tk.LEFT, padx=(12, 0))
         self.position_label = ttk.Label(self, text="")
         self.position_label.pack(side=tk.LEFT, padx=(16, 0))
-        ttk.Button(self, text=t("order_close"), command=on_close).pack(side=tk.RIGHT)
         if on_toggle_settings is not None:
             ttk.Button(self, text=t("viewer_settings"), command=on_toggle_settings).pack(side=tk.RIGHT, padx=(0, 8))
         self.crop_button: Optional[ttk.Button] = None

@@ -64,6 +64,7 @@ class OrderModel:
         miniature en cache ou None. Renvoie les photos dont il reste des aperçus à calculer."""
         planned = planned_items(self.files, config)
         by_key = {item_key(path, kind): (path, kind) for path, kind in planned}
+        previous = self.selected_tile().key if self.selected_tile() is not None else None
         self.tiles = []
         pending: Dict[Path, bool] = {}
         for key in merge_order(order, planned):
@@ -74,7 +75,7 @@ class OrderModel:
                 pending[path] = True
             self.tiles.append(tile)
         self.excluded &= {tile.key for tile in self.tiles}
-        self.selected = None
+        self.selected = self.index_of(previous) if previous is not None else None  # la sélection survit à la reconstruction
         return list(pending)
 
     # ------------------------------------------------------------------ état

@@ -1,4 +1,4 @@
-"""Fenêtre « grille Instagram » : aperçu du rendu final de chaque image de sortie, réordonnable par glisser-déposer.
+"""Étape « Ordre » : la grille des images de sortie, avec le rendu final de chacune, réordonnable par glisser-déposer.
 L'ordre sert ensuite à numéroter les fichiers (01_, 02_…)."""
 import tkinter as tk
 from pathlib import Path
@@ -9,7 +9,6 @@ from PIL import Image
 
 from rkarrousel.formats import INSTAGRAM_MAX_IMAGES, output_format_of
 from rkarrousel.gui.crop_editor import CropEditor
-from rkarrousel.gui.viewer import ImageViewer
 from rkarrousel.gui.order.grid_canvas import GridCanvas
 from rkarrousel.gui.order.grid_layout import GridLayout
 from rkarrousel.gui.order.model import OrderModel, render_signature
@@ -18,7 +17,7 @@ from rkarrousel.i18n import t
 from rkarrousel.kinds import KIND_CROP
 
 
-class OrderWindow(tk.Toplevel):
+class OrderView(ttk.Frame):
     def __init__(
         self,
         parent: tk.Misc,
@@ -31,48 +30,39 @@ class OrderWindow(tk.Toplevel):
         dark: bool = False,
         excluded: Optional[Set[str]] = None,
         on_crop: Optional[Callable[[Path, float], None]] = None,
-        settings_ctx=None,
+        on_adjust: Optional[Callable[[], None]] = None,
     ):
+        """`on_adjust` : « Ajuster cette image » (la vignette sélectionnée) ; `on_change` : l'ordre ou les exclusions
+        ont changé ; `get_config` : les réglages à jour (recalculés à la demande)."""
         super().__init__(parent)
         scale = max(1.0, self.winfo_fpixels("1i") / 96)
         self.scale, self.dark = scale, dark
         self.config_snapshot = dict(config)
-        self.on_change, self.get_config, self.on_crop = on_change, get_config, on_crop
-        self.settings_ctx = settings_ctx  # contexte de l'appli : la visionneuse y règle cadre et fond
+        self.on_change, self.get_config, self.on_crop, self.on_adjust = on_change, get_config, on_crop, on_adjust
+        self.files = list(files)
         self.layout = GridLayout(scale, output_format_of(config))
         self.model = OrderModel(files, excluded)
         self.thumbs = ThumbnailService(cache, (self.layout.tile_w * 2, self.layout.tile_h * 2))  # marge pour un affichage net
         self._closing = False
 
-        self.title(t("order_title"))
         self._build_ui()
-        self.protocol("WM_DELETE_WINDOW", self.close)
-        self.transient(parent)
+        self.bind("<Destroy>", lambda e: self._on_destroy() if e.widget is self else None, add="+")
         self.start(order)
-        self.after(80, self._poll)
+        self._poll_job = self.after(80, self._poll)
 
     # ------------------------------------------------------------------ interface
     def _build_ui(self) -> None:
-        layout, scale = self.layout, self.scale
-        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
-        width = min(layout.canvas_width + int(60 * scale), screen_w - 40)
-        height = min(int(800 * scale), screen_h - 120)
-        x, y = max(0, (screen_w - width) // 2), max(0, (screen_h - height) // 2 - 30)
-        self.geometry(f"{width}x{height}+{x}+{y}")  # centrée sur l'écran
-        self.minsize(min(layout.canvas_width + int(60 * scale), width), min(int(440 * scale), height))
-
-        frame = ttk.Frame(self, padding=(16, 12, 16, 14))
-        frame.pack(fill=tk.BOTH, expand=True)
+        layout = self.layout
+        frame = self
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(toolbar, text=t("order_refresh"), command=self.refresh).pack(side=tk.LEFT)
         ttk.Button(toolbar, text=t("order_reset"), command=self.reset_order).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(toolbar, text=t("order_close"), command=self.close).pack(side=tk.RIGHT)
         self.exclude_btn = ttk.Button(toolbar, text=t("order_exclude"), command=self.toggle_exclude)
         self.exclude_btn.pack(side=tk.RIGHT, padx=(0, 8))
         self.crop_btn = ttk.Button(toolbar, text=t("order_crop"), command=self.crop_selected)
         self.crop_btn.pack(side=tk.RIGHT, padx=(0, 8))
-        self.view_btn = ttk.Button(toolbar, text=t("order_view"), command=self.view_selected)
+        self.view_btn = ttk.Button(toolbar, text=t("order_adjust"), command=self.adjust_selected)
         self.view_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
         hint = ttk.Label(frame, text=t("order_hint"), justify=tk.LEFT, wraplength=layout.canvas_width)
@@ -98,10 +88,10 @@ class OrderWindow(tk.Toplevel):
         self.grid_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.LEFT, fill=tk.Y, padx=(6, 0))
 
-        self.bind("<Delete>", lambda e: self.toggle_exclude())
-        self.bind("<Return>", lambda e: self.view_selected())
+        self.grid_canvas.bind("<Delete>", lambda e: self.toggle_exclude())
+        self.grid_canvas.bind("<Return>", lambda e: self.adjust_selected())
         self.menu = tk.Menu(self, tearoff=0)
-        self.menu.add_command(label=t("order_view"), command=self.view_selected)
+        self.menu.add_command(label=t("order_adjust"), command=self.adjust_selected)
         self.menu.add_command(label=t("order_exclude"), command=self.toggle_exclude)
         self.menu.add_command(label=t("order_crop"), command=self.crop_selected)
         self._update_buttons()
@@ -139,7 +129,7 @@ class OrderWindow(tk.Toplevel):
         if events:
             self.grid_canvas.redraw()
             self._update_status()
-        self.after(80, self._poll)
+        self._poll_job = self.after(80, self._poll)
 
     def _notify(self) -> None:
         self.on_change(self.model.keys(), set(self.model.excluded))
@@ -188,13 +178,10 @@ class OrderWindow(tk.Toplevel):
             self._notify()
             self._update_buttons()
 
-    def view_selected(self) -> None:
-        tile = self.model.selected_tile()
-        if tile is not None:
-            ImageViewer(
-                self, tile.source, tile.kind, self.config_snapshot, dark=self.dark,
-                ctx=self.settings_ctx, on_settings_changed=self.refresh, navigator=self,
-            )
+    def adjust_selected(self) -> None:
+        """Passe à l'étape « Ajustements » sur l'image sélectionnée."""
+        if self.model.selected_tile() is not None and self.on_adjust is not None:
+            self.on_adjust()
 
     # ------------------------------------------------------------------ navigation de la visionneuse
     def viewer_step(self, delta: int):
@@ -245,14 +232,14 @@ class OrderWindow(tk.Toplevel):
             if on_applied is not None:
                 on_applied()
 
-        CropEditor(parent, source, self.config_snapshot, apply, dark=self.dark)
+        CropEditor(parent.winfo_toplevel(), source, self.config_snapshot, apply, dark=self.dark)
 
     def open_tile(self, index: int) -> None:
         """Double-clic : le réglage du cadrage pour un recadrage, sinon la visionneuse."""
         if self.model.tiles[index].kind == KIND_CROP and self.on_crop:
             self.crop_selected()
         else:
-            self.view_selected()
+            self.adjust_selected()
 
     def _popup_menu(self, index: int, x_root: int, y_root: int) -> None:
         self.menu.tk_popup(x_root, y_root)
@@ -264,7 +251,25 @@ class OrderWindow(tk.Toplevel):
     def reset_order(self) -> None:
         self.start([])
 
-    def close(self) -> None:
+    def reload(self, files: Sequence[Path], config: dict, order: Sequence[str], excluded: Set[str]) -> None:
+        """Retour sur l'étape : même photos et même format, on rafraîchit seulement ; sinon la grille est refaite."""
+        self.config_snapshot = dict(config)
+        if list(files) != self.files or output_format_of(config) != self.layout_format:
+            self.files = list(files)
+            self.model = OrderModel(files, excluded)
+            self.layout.reshape(output_format_of(config))
+            self.thumbs.thumb_size = (self.layout.tile_w * 2, self.layout.tile_h * 2)
+            self.grid_canvas.model = self.model
+        self.start(order)
+
+    @property
+    def layout_format(self):
+        return self.layout.target
+
+    def _on_destroy(self) -> None:
         self._closing = True
         self.thumbs.stop()
-        self.destroy()
+        try:
+            self.after_cancel(self._poll_job)
+        except (tk.TclError, ValueError):
+            pass

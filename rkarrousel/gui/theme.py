@@ -40,9 +40,9 @@ def apply_theme(choice: str, root: tk.Misc) -> Theme:
 def place_main_window(root: tk.Misc, scale: float) -> None:
     """Taille adaptée à l'écran (échelle Windows comprise) et fenêtre centrée, barre des tâches exclue."""
     screen_w, screen_h = root.winfo_screenwidth(), root.winfo_screenheight()
-    width = min(int(1120 * scale), screen_w - 40)
+    width = min(int(1240 * scale), screen_w - 40)
     height = min(int(760 * scale), screen_h - 140)
     x = max(0, (screen_w - width) // 2)
     y = max(0, (screen_h - height) // 2 - 30)
     root.geometry(f"{width}x{height}+{x}+{y}")
-    root.minsize(min(int(980 * scale), width), min(int(600 * scale), height))
+    root.minsize(min(int(1040 * scale), width), min(int(600 * scale), height))

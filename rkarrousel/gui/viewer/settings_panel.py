@@ -1,4 +1,4 @@
-"""Panneau de réglages de la visionneuse : cadre, couleur propre à la photo, fond et signature. Ce sont les groupes de
+"""Panneau de réglages de la visionneuse : préréglages, cadre, couleur propre à la photo, fond et signature. Ce sont les groupes de
 l'onglet Réglages, branchés sur les mêmes variables : ce qu'on y règle vaut pour toutes les photos."""
 import tkinter as tk
 from pathlib import Path
@@ -6,11 +6,11 @@ from tkinter import ttk
 from typing import Callable
 
 from rkarrousel.gui.photo_frame_group import PhotoFrameGroup
-from rkarrousel.gui.settings_groups import FillGroup, FrameGroup, SignatureGroup
+from rkarrousel.gui.settings_groups import FillGroup, FrameGroup, PresetsGroup, SignatureGroup
 from rkarrousel.gui.widgets import bind_trace, make_scrollable
 from rkarrousel.i18n import t
 
-PANEL_WIDTH = 480  # pixels à 96 ppp
+PANEL_WIDTH = 450  # pixels à 96 ppp
 
 
 class SettingsPanel:
@@ -21,6 +21,7 @@ class SettingsPanel:
         self.frame.pack_propagate(False)  # largeur fixe ; le panneau défile quand la fenêtre est trop basse
         inner = make_scrollable(self.frame, ttk.Style().lookup("TFrame", "background") or background)
         inner.configure(padding=(0, 0, 8, 0))
+        PresetsGroup(inner, ctx).pack(fill=tk.X, pady=(0, 10))
         FrameGroup(inner, ctx).pack(fill=tk.X)
         self.photo_group = PhotoFrameGroup(inner, ctx, source, on_change)
         self.photo_group.pack(fill=tk.X, pady=(10, 0))
@@ -28,7 +29,7 @@ class SettingsPanel:
         self.signature_group = SignatureGroup(inner, ctx)
         self.fill_group.pack(fill=tk.X, pady=(10, 0))
         self.signature_group.pack(fill=tk.X, pady=(10, 0))
-        ttk.Label(inner, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(430 * scale),
+        ttk.Label(inner, text=t("viewer_settings_hint"), style="Hint.TLabel", wraplength=int(400 * scale),
                   justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
         for variable in (
             model.frame_percent, model.no_frame, model.border_color, model.border_color_mode,

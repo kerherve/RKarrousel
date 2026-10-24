@@ -145,6 +145,7 @@ class GridCanvas(tk.Canvas):
         return False
 
     def _on_press(self, event) -> None:
+        self.focus_set()  # les touches Suppr et Entrée agissent sur la vignette sélectionnée
         x, y = self._canvas_point(event)
         index = self.layout.tile_at(x, y, len(self.model.tiles))
         if self._click_cross(index, x, y):

@@ -1,94 +1,49 @@
-"""Onglet « Fichiers » (liste des photos, dossier de destination) et panneau d'aperçu."""
+"""Étape « Photos » : la liste des photos et dossiers à traiter, le dossier de destination, le format des images, et
+l'aperçu de la photo sélectionnée."""
 import logging
 import os
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Iterable
-
-from PIL import Image, ImageOps, ImageTk
+from typing import Callable, Iterable, Optional
 
 from rkarrousel.gui.context import AppContext
+from rkarrousel.gui.flow.pages.base import Page
+from rkarrousel.gui.flow.pages.preview_panel import PreviewPanel
+from rkarrousel.gui.settings_groups import FormatGroup
 from rkarrousel.gui.system import DND_FILES
 from rkarrousel.i18n import t
-from rkarrousel.pipeline import gather_input_files
 
 logger = logging.getLogger("imagesplitter")
 
 
-class PreviewPanel(ttk.LabelFrame):
-    """Aperçu de la photo (ou de la première photo d'un dossier) sélectionnée dans la liste."""
+class PhotosPage(Page):
+    """Liste des photos et dossiers à traiter, choix du dossier de destination et du format des images."""
 
-    def __init__(self, parent: tk.Misc, ctx: AppContext):
-        super().__init__(parent, text=t("preview_group"), padding=12)
-        scale = ctx.theme.scale
-        self.width, self.height = int(400 * scale), int(380 * scale)
-        self.canvas = tk.Canvas(
-            self, width=self.width, height=self.height, bg=ctx.theme.surface_color(), highlightthickness=0
-        )
-        self.canvas.pack(fill=tk.BOTH, expand=False)
-        self.info = tk.StringVar(value=t("preview_hint"))
-        ttk.Label(self, textvariable=self.info, wraplength=self.width - 20, justify=tk.LEFT).pack(fill=tk.X, pady=(10, 0))
-        self.photo = None
-        self.draw_placeholder()
-
-    def draw_placeholder(self) -> None:
-        self.canvas.delete("all")
-        self.canvas.create_rectangle(2, 2, self.width - 2, self.height - 2, outline="#8a8a8a", dash=(4, 4), width=1)
-        self.canvas.create_text(
-            self.width // 2, self.height // 2, text=t("preview_empty"), fill="#8a8a8a",
-            font=("Segoe UI", 12), justify=tk.CENTER,
-        )
-
-    def clear(self) -> None:
-        self.photo = None
-        self.draw_placeholder()
-        self.info.set(t("preview_hint"))
-
-    def show_entry(self, entry: str) -> None:
-        """Aperçu d'une entrée de la liste : une photo, ou la première photo d'un dossier."""
-        path = Path(entry)
-        if path.is_file():
-            self.show_image(path)
-            return
-        images = gather_input_files([entry])
-        if images:
-            self.show_image(images[0], extra=t("preview_folder", path=entry, count=len(images)))
-        else:
-            self.draw_placeholder()
-            self.info.set(t("preview_folder_empty", path=entry))
-
-    def show_image(self, path: Path, extra: str = "") -> None:
-        try:
-            img = ImageOps.exif_transpose(Image.open(path))
-            img.thumbnail((self.width, self.height))
-            self.photo = ImageTk.PhotoImage(img)
-            self.canvas.delete("all")
-            self.canvas.create_image(self.width // 2, self.height // 2, image=self.photo)
-            width, height = img.size
-            ratio = width / height if height else 0
-            info = t("preview_info", name=path.name, width=width, height=height, ratio=ratio)
-            self.info.set(f"{extra}\n{info}" if extra else info)
-        except Exception as exc:
-            self.info.set(t("preview_error", error=exc))
-
-
-class FilesTab(ttk.Frame):
-    """Liste des photos et dossiers à traiter, choix du dossier de destination et de la numérotation."""
-
-    def __init__(self, parent: tk.Misc, ctx: AppContext, preview: PreviewPanel):
-        super().__init__(parent, padding=14)
-        self.ctx, self.preview, self.model, self.session = ctx, preview, ctx.model, ctx.session
+    def __init__(self, parent: tk.Misc, ctx: AppContext, on_change: Optional[Callable[[], None]] = None):
+        """`on_change` : la liste de photos ou le dossier de destination ont changé (le flux met ses boutons à jour)."""
+        super().__init__(parent)
+        self.ctx, self.model, self.session, self.on_change = ctx, ctx.model, ctx.session, on_change
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+        left = ttk.Frame(self)
+        left.grid(row=0, column=0, sticky=tk.NSEW)
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(1, weight=1)
+        self.preview = PreviewPanel(self, ctx)
+        self.preview.grid(row=0, column=1, sticky=tk.NSEW, padx=(16, 0))
+        self._build_list(left)
+        self.setup_drop_target()
+        self.refresh_list()
 
-        buttons = ttk.Frame(self)
+    def _build_list(self, left: ttk.Frame) -> None:
+        buttons = ttk.Frame(left)
         buttons.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Button(buttons, text=t("add_files"), command=self.add_files).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(buttons, text=t("add_folder"), command=self.add_folder).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(buttons, text=t("clear_selection"), command=self.clear_selection).pack(side=tk.LEFT)
 
-        list_frame = ttk.Frame(self)
+        list_frame = ttk.Frame(left)
         list_frame.grid(row=1, column=0, sticky=tk.NSEW)
         self.listbox = ttk.Treeview(list_frame, show="tree", selectmode="browse", height=6)
         self.listbox.column("#0", stretch=True)
@@ -97,18 +52,18 @@ class FilesTab(ttk.Frame):
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
         scrollbar.pack(side=tk.LEFT, fill=tk.Y)
         self.listbox.configure(yscrollcommand=scrollbar.set)
-        ttk.Label(self, text=t("drop_hint") if DND_FILES else "", style="Hint.TLabel").grid(
+        ttk.Label(left, text=t("drop_hint") if DND_FILES else "", style="Hint.TLabel").grid(
             row=2, column=0, sticky=tk.W, pady=(6, 0)
         )
 
-        dest = ttk.LabelFrame(self, text=t("dest_group"), padding=12)
+        dest = ttk.LabelFrame(left, text=t("dest_group"), padding=12)
         dest.grid(row=3, column=0, sticky=tk.EW, pady=(14, 0))
         dest.columnconfigure(0, weight=1)
         ttk.Entry(dest, textvariable=self.model.dest_dir, state="readonly").grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
         ttk.Button(dest, text=t("choose_folder"), command=self.choose_dest).grid(row=0, column=1, padx=(0, 4))
         ttk.Button(dest, text=t("open"), command=self.open_dest_folder).grid(row=0, column=2)
-        self.setup_drop_target()
-        self.refresh_list()
+        FormatGroup(left, self.ctx).grid(row=4, column=0, sticky=tk.EW, pady=(14, 0))
+        self.model.dest_dir.trace_add("write", lambda *_: self._changed())
 
     # ------------------------------------------------------------------ glisser-déposer
     def setup_drop_target(self) -> None:
@@ -160,6 +115,11 @@ class FilesTab(ttk.Frame):
         self.session.clear()
         self.listbox.delete(*self.listbox.get_children())
         self.preview.clear()
+        self._changed()
+
+    def _changed(self) -> None:
+        if self.on_change is not None:
+            self.on_change()
 
     def refresh_list(self) -> None:
         self.listbox.delete(*self.listbox.get_children())
@@ -170,6 +130,7 @@ class FilesTab(ttk.Frame):
         self.session.selected_paths = unique
         for index, path in enumerate(unique):
             self.listbox.insert("", tk.END, iid=str(index), text=f"  {path}")
+        self._changed()
 
     def on_list_select(self, event) -> None:
         selection = self.listbox.selection()

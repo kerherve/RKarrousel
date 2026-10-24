@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image
 
-from tests.helpers import make_image
+from tests.helpers import build_settings_groups, make_image
 
 try:
     import tkinter as tk
@@ -48,7 +48,15 @@ class GuiFlowTests(unittest.TestCase):
             make_image(self.dir, "c_sq.jpg", (1000, 1000)),
         ]
 
+    @property
+    def settings_tab(self):
+        """Les groupes de réglages, construits à la demande (voir tests/helpers.py)."""
+        if getattr(self, "_groups", None) is None:
+            self._groups = build_settings_groups(self.root, self.app.ctx)
+        return self._groups
+
     def tearDown(self):
+        self._groups = None
         self.root.destroy()
         self.tmp.cleanup()
         # Les variables Tk d'une fenêtre détruite doivent être libérées ICI (thread principal) : sinon le ramasse-miettes
@@ -73,16 +81,16 @@ class GuiFlowTests(unittest.TestCase):
         self.pump(lambda: not self.app.ctx.processing and self.dialogs)
 
     def test_adding_photos_selects_and_previews_the_first(self):
-        self.app.files_tab.add_paths([str(p) for p in self.photos])
-        self.assertEqual(self.app.files_tab.listbox.selection(), ("0",))
-        self.assertIn("a_p34.jpg", self.app.preview.info.get())
+        self.app.flow.pages["photos"].add_paths([str(p) for p in self.photos])
+        self.assertEqual(self.app.flow.pages["photos"].listbox.selection(), ("0",))
+        self.assertIn("a_p34.jpg", self.app.flow.pages["photos"].preview.info.get())
 
     def test_adding_a_folder_previews_its_first_image(self):
-        self.app.files_tab.add_paths([str(self.dir)])
-        self.assertIn("a_p34.jpg", self.app.preview.info.get())
+        self.app.flow.pages["photos"].add_paths([str(self.dir)])
+        self.assertIn("a_p34.jpg", self.app.flow.pages["photos"].preview.info.get())
 
     def test_processing_writes_numbered_files_and_a_summary(self):
-        self.app.files_tab.add_paths([str(p) for p in self.photos])
+        self.app.flow.pages["photos"].add_paths([str(p) for p in self.photos])
         self.run_batch()
         names = sorted(p.name for p in self.out.iterdir())
         self.assertEqual(names[0], "01_a_p34_framed.jpg")
@@ -90,7 +98,7 @@ class GuiFlowTests(unittest.TestCase):
         self.assertIn("3/3", self.dialogs[-1][1])
 
     def test_excluded_images_are_not_generated(self):
-        self.app.files_tab.add_paths([str(self.photos[1])])
+        self.app.flow.pages["photos"].add_paths([str(self.photos[1])])
         from rkarrousel.outputs import item_key
 
         self.app.ctx.session.excluded = {item_key(self.photos[1], "part2_with_sig")}
@@ -113,7 +121,7 @@ class GuiFlowTests(unittest.TestCase):
         )
         self.app.model.gdrive_enabled.set(True)
         self.app.model.gdrive_folder.set("Insta/Test")
-        self.app.files_tab.add_paths([str(self.photos[0]), str(self.photos[2])])
+        self.app.flow.pages["photos"].add_paths([str(self.photos[0]), str(self.photos[2])])
         self.run_batch()
         uploaded = sorted(f["name"] for f in fake.files.values() if f["mime"] != gdrive.FOLDER_MIME)
         self.assertEqual(uploaded, sorted(p.name for p in self.out.iterdir()))
@@ -121,7 +129,7 @@ class GuiFlowTests(unittest.TestCase):
 
     def test_drive_is_skipped_with_a_message_when_not_connected(self):
         self.app.model.gdrive_enabled.set(True)
-        self.app.files_tab.add_paths([str(self.photos[0])])
+        self.app.flow.pages["photos"].add_paths([str(self.photos[0])])
         self.run_batch()
         self.assertIn("Google Drive", self.dialogs[-1][1])
         self.assertEqual(self.dialogs[-1][0], "showwarning")
@@ -151,11 +159,23 @@ class GuiFlowTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ fenêtre « Aperçu et ordre »
     def open_order_window(self, photos):
-        self.app.files_tab.add_paths([str(p) for p in photos])
-        self.app.order.open()
-        window = self.app.order.window
+        """Ajoute les photos, passe à l'étape « Ordre » et attend les aperçus ; renvoie la grille (OrderView)."""
+        self.app.flow.pages["photos"].add_paths([str(p) for p in photos])
+        self.app.flow.go(1)
+        window = self.app.flow.order_view
         self.pump(lambda: window.model.counts()[1] == window.model.counts()[0])  # tous les aperçus sont prêts
         return window
+
+    def show_viewer(self, window):
+        """« Ajuster cette image » sur la vignette sélectionnée : l'étape « Ajustements » avec la visionneuse."""
+        if self.app.flow.index == 2:
+            self.app.flow.go(1)  # on revient à la grille pour que l'étape se rouvre sur la sélection
+        window.adjust_selected()
+        return self.app.flow.pages["adjust"].viewer
+
+    def leave_viewer(self):
+        if self.app.flow.index == 2:
+            self.app.flow.go(1)
 
     def test_order_window_lists_every_output_and_renders_previews(self):
         window = self.open_order_window(self.photos[:2])
@@ -192,8 +212,6 @@ class GuiFlowTests(unittest.TestCase):
         canvas._on_release(Ev((tx + 40, ty + 60)))
         self.assertEqual(window.tiles[3].key, first_key)
         self.assertEqual(self.app.ctx.session.order[3], first_key)
-        window.close()
-        self.app.order.window = None
         self.run_batch()
         names = sorted(p.name for p in self.out.iterdir())
         self.assertTrue(any(name.startswith("04_a_p34_framed") for name in names), names)  # l'image déplacée est la 4e
@@ -202,8 +220,6 @@ class GuiFlowTests(unittest.TestCase):
         window = self.open_order_window(self.photos[1:2])
         window.select(1)
         window.toggle_exclude()
-        window.close()
-        self.app.order.window = None
         self.run_batch()
         names = sorted(p.name for p in self.out.iterdir())
         self.assertEqual(len(names), 3)
@@ -213,10 +229,10 @@ class GuiFlowTests(unittest.TestCase):
         window = self.open_order_window(self.photos[:2])
         self.root.update()
         base = window.layout.columns
-        window.geometry("1700x900")
+        self.root.geometry("2000x900")
         self.pump(lambda: window.layout.columns > base)
         self.assertEqual(window.grid_canvas.layout.columns, window.layout.columns)
-        window.geometry("500x900")
+        self.root.geometry("900x900")
         self.pump(lambda: window.layout.columns == base)
 
     def test_order_window_warns_beyond_twenty_images(self):
@@ -230,24 +246,21 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(window.warning.get(), "")
 
     def test_viewer_adjusts_frame_and_fill_live_and_refreshes_the_grid(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         window = self.open_order_window(self.photos[:1])
         window.select(0)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         refreshed = []
         viewer.on_settings_changed = lambda: refreshed.append(True)
 
         self.assertIn("cadre mesuré", viewer.info.get())
         self.app.model.no_frame.set(True)  # l'image doit être recalculée, sans cadre
-        self.pump(lambda: viewer.jobs.generation >= 2 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
-        viewer.close()
+        self.pump(lambda: viewer.loader.jobs.generation >= 2 and "px" in viewer.info.get() and "cadre mesuré" not in viewer.info.get())
+        self.leave_viewer()
         self.assertEqual(refreshed, [True])  # la grille est rafraîchie à la fermeture
 
     def test_viewer_greys_out_settings_the_displayed_image_does_not_use(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         self.app.model.signature_path.set(str(self.dir / "sig.png"))
         Image.new("RGBA", (200, 80), (255, 255, 255, 255)).save(self.dir / "sig.png")
@@ -256,8 +269,7 @@ class GuiFlowTests(unittest.TestCase):
         def open_viewer(kind):
             index = next(i for i, tile in enumerate(window.tiles) if tile.kind == kind)
             window.select(index)
-            window.view_selected()
-            return [w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer)][-1]
+            return self.show_viewer(window)
 
         def enabled(group):
             return all("disabled" not in child.state() for child in group.winfo_children()
@@ -267,34 +279,32 @@ class GuiFlowTests(unittest.TestCase):
         self.assertFalse(enabled(part.panel.fill_group))
         self.assertIn("non applicable", part.panel.fill_group.cget("text"))
         self.assertIn("non applicable", part.panel.signature_group.cget("text"))
-        part.close()
+        self.leave_viewer()
         whole = open_viewer("part1_with_sig")
         self.assertTrue(enabled(whole.panel.fill_group))
         self.assertNotIn("non applicable", whole.panel.signature_group.cget("text"))
-        whole.close()
+        self.leave_viewer()
 
     def test_viewer_sets_a_frame_colour_for_this_photo_only(self):
-        from rkarrousel.gui import viewer as viewer_pkg
         from rkarrousel.gui.photo_frame_group import PhotoFrameGroup
 
         window = self.open_order_window(self.photos[:2])
         window.select(0)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         group = self._find(viewer, PhotoFrameGroup)
         self.assertEqual(group.mode.get(), "global")
         group.mode.set("contrast")  # cette photo seulement
         key = str(self.photos[0])
         self.assertEqual(self.app.ctx.config["photo_overrides"][key]["border_color_mode"], "contrast")
-        self.pump(lambda: viewer.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
+        self.pump(lambda: viewer.loader.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
         self.assertEqual(self.app.model.border_color_mode.get(), "fixed")  # le réglage général n'a pas bougé
         self.assertRegex(group.resolved_text.cget("text"), r"^#[0-9A-F]{6}$")  # la couleur obtenue est affichée
         before = group.resolved_text.cget("text")
         group.tweaks[2].set(0.5)  # retouche fine : un peu plus clair
         self.pump(lambda: "border_tweak" in self.app.ctx.config["photo_overrides"].get(key, {}))
         self.assertGreater(self.app.ctx.config["photo_overrides"][key]["border_tweak"][2], 0)
-        self.pump(lambda: viewer.jobs.generation >= 3 and group.resolved_text.cget("text") != before)
+        self.pump(lambda: viewer.loader.jobs.generation >= 3 and group.resolved_text.cget("text") != before)
         group.tweaks[0].set(0.6)
         for name in ("ButtonPress-1", "ButtonRelease-1", "ButtonPress-1", "ButtonRelease-1"):  # un double-clic
             group.scales[0].event_generate(f"<{name}>", x=40, y=5)
@@ -303,7 +313,7 @@ class GuiFlowTests(unittest.TestCase):
         group.reset_tweak()
         group.mode.set("global")
         self.pump(lambda: key not in self.app.ctx.config["photo_overrides"])
-        viewer.close()
+        self.leave_viewer()
 
     def _find(self, widget, cls):
         for child in widget.winfo_children():
@@ -324,12 +334,10 @@ class GuiFlowTests(unittest.TestCase):
         canvas.event_generate("<ButtonRelease-1>", x=x + dx, y=y)
 
     def test_viewer_swipes_like_an_instagram_carousel(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         window = self.open_order_window(self.photos[:2])
         window.select(1)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None and viewer.carousel.neighbors[1] is not None and viewer.carousel.neighbors[-1] is not None)
         self.assertTrue(viewer.view.fit_mode)
         width = viewer._slide_distance()
@@ -343,28 +351,24 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(window.model.selected, 2)
         self.swipe(viewer, int(width * 0.6))  # vers la droite : l'image précédente
         self.pump(lambda: window.model.selected == 1 and not viewer.carousel.animating)
-        viewer.close()
+        self.leave_viewer()
 
     def test_swiping_past_the_last_image_springs_back(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         window = self.open_order_window(self.photos[:1])  # une seule image
         window.select(0)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         self.swipe(viewer, -400)
         self.pump(lambda: not viewer.carousel.animating and viewer.carousel.slide_px == 0.0)
         self.assertEqual(window.model.selected, 0)
-        viewer.close()
+        self.leave_viewer()
 
     def test_zoomed_viewer_pans_instead_of_swiping(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         window = self.open_order_window(self.photos[:2])
         window.select(1)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         viewer.set_zoom(1.0)  # zoomée : le glisser déplace l'image
         self.assertFalse(viewer.view.fit_mode)
@@ -373,14 +377,12 @@ class GuiFlowTests(unittest.TestCase):
         self.root.update()
         self.assertEqual(window.model.selected, 1)
         self.assertNotEqual(viewer.view.ox, before)
-        viewer.close()
+        self.leave_viewer()
 
     def open_viewer(self, window, index):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         window.select(index)
-        window.view_selected()
-        return next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        return self.show_viewer(window)
 
     def test_viewer_has_a_crop_button_that_works_on_crop_images(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
@@ -394,16 +396,16 @@ class GuiFlowTests(unittest.TestCase):
             calls.append(parent)
             apply(0.3)
 
-        before = viewer.jobs.generation
-        with mock.patch("rkarrousel.gui.order.window.CropEditor", fake_editor):
+        before = viewer.loader.jobs.generation
+        with mock.patch("rkarrousel.gui.order.view.CropEditor", fake_editor):
             viewer._open_crop()
-        self.assertEqual(calls, [viewer])  # ouvert au-dessus de la visionneuse
+        self.assertEqual(calls, [self.root])  # ouvert au-dessus de la fenêtre principale
         self.assertEqual(self.app.ctx.config["crop_offsets"][str(self.photos[2])], 0.3)
-        self.pump(lambda: viewer.jobs.generation > before and viewer.settings_changed)  # l'image est recalculée
+        self.pump(lambda: viewer.loader.jobs.generation > before and viewer.settings_changed)  # l'image est recalculée
         viewer.step(-1)  # image précédente : plus un recadrage, le bouton se grise
         self.pump(lambda: window.model.selected == kinds.index("crop34") - 1 and not viewer.carousel.animating)
         self.assertIn("disabled", viewer.toolbar.crop_button.state())
-        viewer.close()
+        self.leave_viewer()
 
     def test_browsing_uses_the_previews_already_computed_by_the_grid(self):
         window = self.open_order_window(self.photos[:2])  # 5 images
@@ -416,30 +418,26 @@ class GuiFlowTests(unittest.TestCase):
         self.assertTrue(viewer.placeholder)  # l'aperçu s'affiche tout de suite…
         self.assertIsNotNone(viewer.image)
         self.pump(lambda: not viewer.placeholder)  # …puis la pleine résolution le remplace
-        viewer.close()
+        self.leave_viewer()
 
     def test_viewer_rerenders_when_the_colour_source_changes(self):
-        from rkarrousel.gui import viewer as viewer_pkg
 
         self.app.model.border_color_mode.set("dominant")
         window = self.open_order_window(self.photos[:1])
         window.select(0)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         self.app.model.color_source.set("edges")
-        self.pump(lambda: viewer.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
+        self.pump(lambda: viewer.loader.jobs.generation >= 2 and viewer.settings_changed and "px" in viewer.info.get())
         self.assertEqual(viewer.config_snapshot["color_source"], "edges")
-        viewer.close()
+        self.leave_viewer()
 
     def test_viewer_steps_through_the_images_with_arrows_and_keys(self):
-        from rkarrousel.gui import viewer as viewer_pkg
         from rkarrousel.i18n import kind_label
 
         window = self.open_order_window(self.photos[:2])  # 1 image + 4 images (paysage) = 5
         window.select(0)
-        window.view_selected()
-        viewer = next(w for w in window.winfo_children() if isinstance(w, viewer_pkg.ImageViewer))
+        viewer = self.show_viewer(window)
         self.pump(lambda: viewer.image is not None)
         self.assertEqual(viewer.toolbar.position_label.cget("text"), "1 / 5")
         self.assertFalse(window.viewer_can_step(-1))  # première image : pas de flèche précédente
@@ -456,8 +454,8 @@ class GuiFlowTests(unittest.TestCase):
         viewer.step(1)  # en carrousel, l'image suivante arrive en glissant
         self.pump(lambda: window.model.selected == 1 and not viewer.carousel.animating)
         self.assertEqual(viewer.toolbar.position_label.cget("text"), "2 / 5")
-        self.assertIn(kind_label(window.model.tiles[1].kind), viewer.title())
-        self.pump(lambda: viewer.image is not None and viewer.jobs.generation >= 2)
+        self.assertIn(kind_label(window.model.tiles[1].kind), viewer.caption.get())
+        self.pump(lambda: viewer.image is not None and viewer.loader.jobs.generation >= 2)
         self.pump(lambda: viewer.image is not None and not viewer.placeholder and viewer.carousel.neighbors[1] is not None)
         viewer._key_step(1)
         self.pump(lambda: window.model.selected == 2 and not viewer.carousel.animating)
@@ -471,7 +469,7 @@ class GuiFlowTests(unittest.TestCase):
         viewer.step(1)  # dernière : rien ne bouge
         self.assertEqual(window.model.selected, 4)
         self.assertNotEqual(first_source, None)
-        viewer.close()
+        self.leave_viewer()
 
     def test_crop_button_is_only_enabled_on_a_crop_tile(self):
         window = self.open_order_window(self.photos[2:3])  # carré : image entière + recadrage
@@ -483,7 +481,7 @@ class GuiFlowTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ préréglages et couleurs de la photo
     def preset_group(self):
-        return self.app.settings_tab.presets
+        return self.settings_tab.presets
 
     def select_preset(self, preset_id):
         group = self.preset_group()
@@ -497,11 +495,11 @@ class GuiFlowTests(unittest.TestCase):
         self.assertTrue(model.no_frame.get())
         self.assertEqual(model.landscape_fill_mode.get(), "blur")
         self.assertEqual(model.output_format.get(), "9:16")
-        self.assertTrue(self.app.settings_tab.frame.spin.instate(["disabled"]))
+        self.assertTrue(self.settings_tab.frame.spin.instate(["disabled"]))
         self.select_preset("photo_color")
         self.assertFalse(model.no_frame.get())
         self.assertEqual((model.border_color_mode.get(), model.background_color_mode.get()), ("light", "dark"))
-        self.assertEqual(self.app.settings_tab.frame.mode.get(), "Photo, version claire")  # la liste affiche la valeur
+        self.assertEqual(self.settings_tab.frame.mode.get(), "Photo, version claire")  # la liste affiche la valeur
 
     def test_saving_reapplying_and_deleting_a_user_preset(self):
         model, group = self.app.model, self.preset_group()
@@ -520,7 +518,7 @@ class GuiFlowTests(unittest.TestCase):
         model.output_width.set(0)
         self.select_preset("Mon style")
         self.assertEqual((model.frame_percent.get(), model.output_format.get(), model.output_width.get()), (3.5, "4:5", 1080))
-        self.assertEqual(self.app.settings_tab.output.format_box.get(), "4:5 · Feed Instagram")
+        self.assertEqual(self.settings_tab.format.format_box.get(), "4:5 · Feed Instagram")
 
         with mock.patch("tkinter.messagebox.askyesno", return_value=True):
             group.delete()
@@ -542,7 +540,7 @@ class GuiFlowTests(unittest.TestCase):
         self.assertNotEqual(self.app.config["presets"]["Perso"]["frame_ratio"], 0.09)  # refusé : inchangé
 
     def test_a_photo_colour_mode_replaces_the_colour_picker(self):
-        frame = self.app.settings_tab.frame
+        frame = self.settings_tab.frame
         self.app.model.border_color_mode.set("fixed")
         self.assertTrue(frame.color.entry.instate(["!disabled"]))
         self.app.model.border_color_mode.set("dominant")
@@ -554,7 +552,7 @@ class GuiFlowTests(unittest.TestCase):
         red = make_image(self.dir, "r_red.jpg", (900, 1200), (200, 30, 30))
         blue = make_image(self.dir, "s_blue.jpg", (900, 1200), (30, 40, 200))
         self.app.model.border_color_mode.set("dominant")
-        self.app.files_tab.add_paths([str(red), str(blue)])
+        self.app.flow.pages["photos"].add_paths([str(red), str(blue)])
         self.run_batch()
         a = Image.open(self.out / "01_r_red_framed.jpg").convert("RGB")
         b = Image.open(self.out / "02_s_blue_framed.jpg").convert("RGB")

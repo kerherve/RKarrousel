@@ -12,12 +12,17 @@ class GridLayout:
     de gauche à droite, ligne après ligne."""
 
     def __init__(self, scale: float, target: Tuple[int, int]):
-        tw, th = target  # les vignettes ont le format de sortie choisi
         self.scale = scale
         self.tile_w = int(BASE_TILE_W * scale)
-        self.tile_h = int(BASE_TILE_W * scale * th / tw)
         self.gap = max(2, int(BASE_GAP * scale))
         self.columns = MIN_COLUMNS
+        self.reshape(target)
+
+    def reshape(self, target: Tuple[int, int]) -> None:
+        """Les vignettes ont le format de sortie choisi."""
+        tw, th = target
+        self.target = target
+        self.tile_h = int(self.tile_w * th / tw)
 
     def fit_width(self, width: int) -> bool:
         """Nombre de colonnes qui tiennent dans `width` pixels (au moins trois). Renvoie True s'il a changé."""
