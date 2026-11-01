@@ -92,6 +92,18 @@ class NoFrameTests(unittest.TestCase):
                 for kind, img in produce.render_outputs(path, {**config, "landscape_fill_mode": mode}):
                     self.assertAlmostEqual(img.width / img.height, 3 / 4, delta=0.002, msg=f"{path.name} {kind} {mode}")
 
+    def test_signature_is_centred_in_the_blurred_band_of_a_square_photo(self):
+        sig = self.dir / "sig.png"
+        Image.new("RGBA", (200, 60), (255, 0, 0, 255)).save(sig)
+        config = {"frame_enabled": False, "landscape_fill_mode": "blur", "signature_path": str(sig),
+                  "signature_position": "bottom-right"}
+        src = make_image(self.dir, "sq.jpg", (800, 800))
+        img = produce.render_output(src, config, "with_sig")
+        red = [x for y in range(img.height - 150, img.height) for x in range(img.width)
+               if img.getpixel((x, y))[0] > 200 and img.getpixel((x, y))[1] < 60]
+        self.assertTrue(red)
+        self.assertAlmostEqual((min(red) + max(red)) / 2, img.width / 2, delta=3)
+
     def test_crop_without_frame_is_the_bare_crop(self):
         src = make_image(self.dir, "p23.jpg", (600, 900))
         img = produce.render_output(src, {"frame_enabled": False}, "crop34")

@@ -52,11 +52,15 @@ def render_portrait_2_3(img: Image.Image, config: dict) -> Image.Image:
     position = signature_position_of(config)
     sig_scale = signature_scale_of(config)
     if config.get("landscape_fill_mode", DEFAULT_LANDSCAPE_FILL_MODE) == "blur":
+        tw, th = output_format_of(config)
+        # Bandes floutées en haut et en bas (photo carrée) : signature centrée dessus, comme pour un paysage ;
+        # bandes sur les côtés (portrait étroit) : elle reste sur la photo, qui occupe toute la hauteur.
+        bands_on_top_and_bottom = img.width / img.height >= tw / th
         return create_portrait_with_landscape_blur_fill(
             img,
             sig_path,
             frame_ratio=frame_ratio_of(config),
-            signature_on_photo=True,
+            signature_on_photo=not bands_on_top_and_bottom,
             border_color=color,
             blur_strength=blur_strength_of(config),
             sig_position=position,

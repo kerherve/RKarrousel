@@ -4,6 +4,16 @@ Each `## vX.Y.Z` section becomes the GitHub release text and is shown in the app
 (see `tools/release_notes.py`). Write both languages before tagging: `### English` first, then `### Français`.
 Chaque section `## vX.Y.Z` devient le texte de la release ; l'appli n'affiche que la langue choisie.
 
+## v0.13.3
+
+### English
+
+- Blurred background: on a square photo, the signature is now centred on the blurred band at the bottom, like on landscape photos (it used to sit at the bottom right of the sharp photo).
+
+### Français
+
+- Fond flouté : sur une photo carrée, la signature est maintenant centrée sur la bande floutée du bas, comme sur les photos paysage (elle était auparavant en bas à droite de la photo nette).
+
 ## v0.13.2
 
 ### English
